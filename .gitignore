@@ -1,0 +1,30 @@
+# Binary files (Hasil build)
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+learn-go.exe
+
+# Dependency folders
+vendor/
+
+# Configuration & Secrets (Sangat Penting!)
+# Jangan biarkan token Telegram kamu bocor
+.env
+config.go
+secrets.go
+
+# Data Simpanan (Opsional)
+# Kalau kamu ingin daftar sahammu tetap private, aktifkan ini:
+stocks.json
+
+# IDE - Visual Studio Code
+.vscode/
+*.code-workspace
+.history/
+
+# OS related files
+Thumbs.db
+desktop.ini
+.DS_Store

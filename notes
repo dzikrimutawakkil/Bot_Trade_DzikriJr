@@ -1,0 +1,38 @@
+Inti dari bot ini bukan sebagai "dukun" yang meramal masa depan, melainkan sebagai **detektor peluang dengan probabilitas tinggi.** Kalau dalam bahasa *developer*, bot ini adalah **Filter Data**. Dari ribuan pergerakan harga yang acak, dia membuang sampah-sampahnya dan hanya mengambil yang polanya paling "sehat" menurut algoritma yang kamu buat.
+
+Berikut adalah penjelasan detilnya:
+
+---
+
+### 1. Apa yang Sebenarnya Dideteksi?
+
+Bot kamu mendeteksi **"Momentum di dalam Tren Sehat."**
+
+* **Tren Sehat (MA20):** Bot mendeteksi saham yang harganya sedang merangkak naik (bukan saham yang lagi terjun bebas).
+* **Momentum (RSI 40-60):** Bot mendeteksi saham yang "baru mau mulai lari". Dia sengaja menghindari saham yang sudah terlalu capai/ketinggian (RSI > 70).
+* **Titik Pantul (DistToMA):** Dia mendeteksi saham yang sedang "istirahat" sejenak di dekat garis rata-ratanya, yang biasanya menjadi pijakan untuk lompat lebih tinggi lagi.
+
+### 2. Apakah Memprediksi Saham Akan Naik?
+
+**Iya, secara statistik.**
+Bot ini menggunakan asumsi *Trend Following*. Artinya, bot percaya bahwa: *"Saham yang sedang bergerak naik, cenderung akan melanjutkan kenaikannya sampai ada tenaga yang menghentikannya."* Bot tidak menjamin 100% naik, tapi dia memastikan bahwa saat kamu "tebak" naik, **peluang menangnya lebih besar daripada peluang kalahnya.**
+
+### 3. Jangka Waktu (Timeframe)
+
+Karena kamu menggunakan parameter **MA20** (rata-rata harga 20 hari), bot ini didesain untuk:
+
+> **Swing Trading (Jangka Pendek ke Menengah)**
+
+* **Durasi:** Biasanya **1 hingga 4 minggu**.
+* **Target:** Bukan untuk *Day Trading* (jual-beli di hari yang sama), tapi juga bukan untuk investasi bertahun-tahun.
+* **Karakter:** Kamu "menumpang" di sebuah tren selama beberapa minggu sampai target profit 7.5% kamu tercapai, lalu keluar dan cari "tumpangan" baru.
+
+---
+
+### Kesimpulan Sederhana:
+
+Bot ini mendeteksi **saham yang lagi "segar" dan punya tenaga buat lanjut naik dalam waktu dekat.**
+
+Jadi, pas kamu lagi sibuk ngoding di Avian Brands, bot ini bertugas mencarikan "kereta" yang baru saja berangkat dari stasiun. Kamu tinggal lompat naik, duduk manis selama beberapa minggu, dan turun saat sudah sampai di tujuan (TP).
+
+**Sudah cukup jelas, Dzik? Atau kamu mau coba persempit jangka waktunya jadi lebih cepat (misal pakai MA5) supaya bisa dapet profit dalam hitungan hari saja?**
