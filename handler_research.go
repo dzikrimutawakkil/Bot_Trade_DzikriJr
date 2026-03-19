@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"strconv"
+	"regexp"
+	"time"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -44,58 +47,122 @@ func processRecommendation(bot *tgbotapi.BotAPI) {
 	}
 
 	type Recommendation struct {
-		Symbol   string
-		Score    float64
-		Status   string
-		DistToMA float64
+		Symbol       string
+		Score        float64
+		Status       string
+		DistToMA     float64
+		DeepAnalysis string
+		Sentiment    float64
 	}
 	var results []Recommendation
 
-	sendSimpleMessage(bot, "⏳ Siap Bos! Lagi sortir saham LQ45 buat kamu...")
+	// Ganti pesan loading karena prosesnya sekarang lebih berat
+	sendSimpleMessage(bot, "⏳ Proses sortir LQ45 sedang berlangsung...")
 
 	for _, s := range pool {
-		score, status, distToMA := getStockScore(s)
+		score, status, distToMA := getStockScore(s) //
 		if score > 0 {
-			results = append(results, Recommendation{s, score, status, distToMA})
+			results = append(results, Recommendation{
+				Symbol:   s,
+				Score:    score,
+				Status:   status,
+				DistToMA: distToMA,
+			})
 		}
 	}
 
+	// SORTING SEMENTARA: Urutkan teknikalnya dulu untuk mencari Top 5
 	sort.Slice(results, func(i, j int) bool {
 		if results[i].Score == results[j].Score {
-			return results[i].DistToMA < results[j].DistToMA
+			return results[i].DistToMA < results[j].DistToMA //
 		}
-		return results[i].Score > results[j].Score
+		return results[i].Score > results[j].Score //
 	})
 
+	// Potong maksimal 5 saham teratas agar call API AI tidak kepanjangan
+	limit := 5
+	if len(results) < limit {
+		limit = len(results)
+	}
+	topCandidates := results[:limit]
+
+	// INTEGRASI DEEP RESEARCH (Hanya untuk yang Hijau / Skor == 10)
+	for i, res := range topCandidates {
+		if res.Score == 10 {
+			news, _ := fetchNewsRSS(res.Symbol)
+			tech := fetchTechnicalData(res.Symbol)
+			analysis, err := getDeepAnalysis(res.Symbol, news, tech)
+			
+			if err == nil && analysis != "" {
+				topCandidates[i].DeepAnalysis = analysis
+				topCandidates[i].Sentiment = extractSentimentScore(analysis)
+			} else {
+				fmt.Printf("⚠️ Gagal mendapat AI untuk %s: %v\n", res.Symbol, err)
+			}
+			
+			// WAJIB: Kasih jeda 3 detik agar server AI tidak memblokir bot karena spam
+			time.Sleep(3 * time.Second)
+		}
+	}
+
+	// SORTING FINAL: Urutkan ulang berdasarkan Sentimen AI
+	sort.Slice(topCandidates, func(i, j int) bool {
+		// Jika keduanya Hijau (Skor 10), sentimen terbesar menang
+		if topCandidates[i].Score == 10 && topCandidates[j].Score == 10 {
+			if topCandidates[i].Sentiment != topCandidates[j].Sentiment {
+				return topCandidates[i].Sentiment > topCandidates[j].Sentiment
+			}
+			return topCandidates[i].DistToMA < topCandidates[j].DistToMA
+		}
+		// Kalau selain Hijau, kembalikan ke aturan teknikal biasa
+		if topCandidates[i].Score == topCandidates[j].Score {
+			return topCandidates[i].DistToMA < topCandidates[j].DistToMA
+		}
+		return topCandidates[i].Score > topCandidates[j].Score
+	})
+
+	// RANGKUM PESAN BALASAN
 	var sb strings.Builder
 	var topSymbols []string
-	sb.WriteString("💰 **Rekomendasi Belanja Saham** 💰\n\n")
+	sb.WriteString("💰 **TOP 3 Saham Rekomendasi** 💰\n\n")
 
 	count := 0
-	for _, res := range results {
+	for _, res := range topCandidates {
 		if count >= 3 {
 			break
 		}
+
 		emoji := "⭐"
 		if res.Score == 10 {
 			emoji = "🔥"
 		}
-		sb.WriteString(fmt.Sprintf("%s **%s**\n%s\n\n", emoji, res.Symbol, res.Status))
+
+		// Header saham yang minimalis seperti seleramu
+		sb.WriteString(fmt.Sprintf("━━━━━━━━━ %s **%s** %s ━━━━━━━━━\n\n", emoji, res.Symbol, emoji,))
+		
+		if res.Score == 10 && res.DeepAnalysis != "" {
+			cleanAnalysis := strings.Replace(res.DeepAnalysis, "Hasil Deep Research:", "", 1)
+			cleanAnalysis = strings.Replace(cleanAnalysis, "🔍", "", 1)
+			sb.WriteString(fmt.Sprintf("%s\n\n\n", strings.TrimSpace(cleanAnalysis)))
+		} else {
+			sb.WriteString(fmt.Sprintf("%s\n\n\n", res.Status))
+		}
+
 		topSymbols = append(topSymbols, res.Symbol)
 		count++
 	}
 
 	if count == 0 {
-		msg := tgbotapi.NewMessage(MyChatID, "Pasar lagi kurang oke, Dzik. Pantau RDPU dulu.")
+		msg := tgbotapi.NewMessage(MyChatID, "Pasar lagi kurang oke, Dzik. Pantau RDPU dulu.") //
 		bot.Send(msg)
 		return
 	}
 
-	dataBerita := "news:" + strings.Join(topSymbols, ",")
-	btn := tgbotapi.NewInlineKeyboardButtonData("📰 Cek Berita Top 3", dataBerita)
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(btn))
+	dataBerita := "news:" + strings.Join(topSymbols, ",") //
+	btn := tgbotapi.NewInlineKeyboardButtonData("📰 Cek Berita Top 3", dataBerita) //
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(btn)) //
 
-	msg := tgbotapi.NewMessage(MyChatID, sb.String())
+	msg := tgbotapi.NewMessage(MyChatID, sb.String()) //
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = keyboard
 	bot.Send(msg)
@@ -119,4 +186,14 @@ func processNews(bot *tgbotapi.BotAPI, topStocks []string) {
 	msg.ParseMode = "Markdown"
 	msg.DisableWebPagePreview = true
 	bot.Send(msg)
+}
+
+func extractSentimentScore(text string) float64 {
+	re := regexp.MustCompile(`(?i)Skor Sentimen[:\*]*\s*([0-9]+(?:\.[0-9]+)?)/10`)
+	match := re.FindStringSubmatch(text)
+	if len(match) > 1 {
+		val, _ := strconv.ParseFloat(match[1], 64)
+		return val
+	}
+	return 0 // Jika gagal ekstrak, sentimen dianggap 0
 }

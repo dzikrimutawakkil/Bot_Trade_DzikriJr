@@ -137,7 +137,7 @@ func getDeepAnalysis(symbol string, newsContent string, technicalContent string)
 		[DATA TEKNIKAL]
 		%s
 
-		WAJIB gunakan format persis seperti di bawah ini. Gunakan pemformatan Markdown (cetak tebal) dan baris baru agar rapi dibaca di Telegram:
+		WAJIB gunakan format persis seperti di bawah ini. Gunakan pemformatan Markdown:
 
 		🎯 **Skor Sentimen:** [Angka 1-10]/10
 		📊 **Tren Teknikal:** [Bullish / Bearish / Sideways] (Berikan emoji 📈/📉/↔️)
@@ -146,8 +146,7 @@ func getDeepAnalysis(symbol string, newsContent string, technicalContent string)
 		📝 **Kesimpulan Analisis:**
 		[Tulis 2-3 kalimat padat. Jangan buat satu paragraf panjang yang sumpek, gunakan enter/baris baru jika perlu agar nyaman dibaca.]
 
-		💡 **Rekomendasi: [BELI / TAHAN / JUAL]**
-		_Alasan: [Satu kalimat penjelasan yang solid]_
+		🟢 **REKOMENDASI: [BELI / TAHAN / JUAL]** Alasan: [Satu kalimat penjelasan yang solid]
 		`, symbol, newsContent, technicalContent)
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
