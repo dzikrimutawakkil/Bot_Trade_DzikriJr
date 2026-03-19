@@ -22,7 +22,9 @@ func processResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 		return
 	}
 
-	analysis, err := getDeepAnalysis(symbol, news)
+	technicalData := fetchTechnicalData(symbol)
+
+	analysis, err := getDeepAnalysis(symbol, news, technicalData)
 	if err != nil {
 		sendSimpleMessage(bot, "❌ Gagal melakukan analisis AI.")
 		return

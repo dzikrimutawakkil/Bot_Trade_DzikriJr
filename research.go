@@ -2,40 +2,117 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"strings"
+	"io"
 	"log"
+	"net/http"
+	"strings"
 	"time"
-	"github.com/mmcdole/gofeed"
+
 	"github.com/google/generative-ai-go/genai"
+	"github.com/mmcdole/gofeed"
 	"google.golang.org/api/option"
 )
 
-// Fungsi untuk ambil berita terbaru via RSS Google News
+// Fungsi untuk ambil berita terbaru via RSS Google News (Fundamental)
 func fetchNewsRSS(symbol string) (string, error) {
 	fp := gofeed.NewParser()
-	// URL RSS Google News untuk keyword saham tertentu
 	url := fmt.Sprintf("https://news.google.com/rss/search?q=saham+%s&hl=id-ID&gl=ID&ceid=ID:id", symbol)
-	
+
 	feed, err := fp.ParseURL(url)
 	if err != nil {
 		return "", err
 	}
 
 	var newsList []string
-	// Ambil 10 berita teratas
 	for i, item := range feed.Items {
 		if i >= 10 {
 			break
 		}
 		newsList = append(newsList, fmt.Sprintf("- %s", item.Title))
 	}
-
 	return strings.Join(newsList, "\n"), nil
 }
 
-func getDeepAnalysis(symbol string, newsContent string) (string, error) {
-	// 1. Tambahkan Timeout 30 Detik (Biar nggak nunggu selamanya)
+// Struct untuk memecah JSON dari Yahoo Finance API
+type YahooChart struct {
+	Chart struct {
+		Result []struct {
+			Indicators struct {
+				Quote []struct {
+					Close []float64 `json:"close"`
+				} `json:"quote"`
+			} `json:"indicators"`
+		} `json:"result"`
+	} `json:"chart"`
+}
+
+// Fungsi BARU: Ambil data harga historis & hitung MA20 (Teknikal)
+func fetchTechnicalData(symbol string) string {
+	// Panggil API Yahoo Chart (1 bulan terakhir, interval harian)
+	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s.JK?interval=1d&range=1mo", symbol)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Add("User-Agent", "Mozilla/5.0") // Biar gak dikira bot spam
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "Data teknikal gagal diambil."
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var data YahooChart
+	json.Unmarshal(body, &data)
+
+	// Validasi data
+	if len(data.Chart.Result) == 0 || len(data.Chart.Result[0].Indicators.Quote) == 0 {
+		return "Data teknikal tidak ditemukan di bursa."
+	}
+
+	closes := data.Chart.Result[0].Indicators.Quote[0].Close
+	var validCloses []float64
+	for _, c := range closes {
+		if c > 0 { // Hindari harga 0 saat hari libur bursa
+			validCloses = append(validCloses, c)
+		}
+	}
+
+	if len(validCloses) < 20 {
+		return "Data historis kurang dari 20 hari, MA20 tidak valid."
+	}
+
+	// Hitung MA20 (Rata-rata harga 20 hari terakhir)
+	last20 := validCloses[len(validCloses)-20:]
+	var sum float64
+	for _, val := range last20 {
+		sum += val
+	}
+	ma20 := sum / 20.0
+	currentPrice := validCloses[len(validCloses)-1]
+
+	// Status Tren
+	statusMA := "DI BAWAH MA20 (Downtrend/Lemah)"
+	if currentPrice > ma20 {
+		statusMA = "DI ATAS MA20 (Uptrend/Kuat)"
+	}
+
+	// Ambil pergerakan 5 hari terakhir
+	last5 := validCloses[len(validCloses)-5:]
+	var trendStr []string
+	for _, val := range last5 {
+		trendStr = append(trendStr, fmt.Sprintf("%.0f", val))
+	}
+
+	report := fmt.Sprintf("Harga Terakhir: Rp %.0f\nMA20: Rp %.0f\nStatus Teknikal: %s\nHarga 5 Hari Terakhir: %s",
+		currentPrice, ma20, statusMA, strings.Join(trendStr, " -> "))
+
+	return report
+}
+
+// Fungsi AI yang sudah di-UPGRADE (Menerima input Teknikal)
+func getDeepAnalysis(symbol string, newsContent string, technicalContent string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -45,29 +122,39 @@ func getDeepAnalysis(symbol string, newsContent string) (string, error) {
 	}
 	defer client.Close()
 
-	// 2. Gunakan model yang paling "lincah" di daftar tadi
 	model := client.GenerativeModel("gemini-flash-latest")
+	log.Printf("[AI] Mengirim data BERITA dan TEKNIKAL %s ke Gemini...", symbol)
 
-	log.Printf("[AI] Mengirim data berita %s ke Gemini...", symbol)
-	
+	// Prompt yang jauh lebih canggih & tajam
+	// Prompt yang sudah di-UPGRADE untuk tampilan Telegram yang cantik
 	prompt := fmt.Sprintf(`
-    Analisis sentimen saham %s dari berita berikut.
-    Berikan jawaban dalam teks biasa (jangan pakai simbol aneh atau garis bawah berlebihan).
-    
-    Format:
-    Skor Sentimen: [angka]
-    Keyword: [kata1, kata2]
-    Kesimpulan: [1 kalimat]
-    
-    Berita: %s`, symbol, newsContent)
+		Bertindaklah sebagai Analis Saham Profesional.
+		Analisis saham %s berdasarkan data berikut:
+
+		[DATA FUNDAMENTAL & SENTIMEN BERITA]
+		%s
+
+		[DATA TEKNIKAL]
+		%s
+
+		WAJIB gunakan format persis seperti di bawah ini. Gunakan pemformatan Markdown (cetak tebal) dan baris baru agar rapi dibaca di Telegram:
+
+		🎯 **Skor Sentimen:** [Angka 1-10]/10
+		📊 **Tren Teknikal:** [Bullish / Bearish / Sideways] (Berikan emoji 📈/📉/↔️)
+		🔑 **Kata Kunci:** [3-5 kata kunci]
+
+		📝 **Kesimpulan Analisis:**
+		[Tulis 2-3 kalimat padat. Jangan buat satu paragraf panjang yang sumpek, gunakan enter/baris baru jika perlu agar nyaman dibaca.]
+
+		💡 **Rekomendasi: [BELI / TAHAN / JUAL]**
+		_Alasan: [Satu kalimat penjelasan yang solid]_
+		`, symbol, newsContent, technicalContent)
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
-		// Jika kena timeout, ini akan tercetak di terminal
 		log.Printf("[AI] Gagal dapat respon: %v", err)
 		return "", err
 	}
-
 	log.Printf("[AI] Respon berhasil diterima!")
 
 	if len(resp.Candidates) > 0 {
