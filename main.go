@@ -18,6 +18,7 @@ func main() {
 		tgbotapi.BotCommand{Command: "buy", Description: "Format: /buy [KODE] [HARGA] [LOTS]"},
 		tgbotapi.BotCommand{Command: "sell", Description: "Format: /sell [KODE]"},
 		tgbotapi.BotCommand{Command: "research", Description: "Format: /research [KODE]"},
+		tgbotapi.BotCommand{Command: "evaluate", Description: "Evaluasi Portofolio Saat Ini"},
 	)
 	bot.Request(configs)
 
@@ -30,10 +31,17 @@ func main() {
 	jakartaTime, _ := time.LoadLocation("Asia/Jakarta")
 	c := cron.New(cron.WithLocation(jakartaTime))
 
-	// 2. Atur Jadwal: Detik Menit Jam HariBulan Bulan HariMinggu
+	// Cron job analisis otomatis setiap jam 08:45 WIB (Senin-Jumat)
 	// "45 8 * * 1-5" artinya: Jam 08:45, Senin sampai Jumat
 	_, err = c.AddFunc("45 8 * * 1-5", func() {
 		log.Println("Menjalankan Automatic Daily Scanner...")
+		processPortfolioEvaluation(bot)
+	})
+
+	// Atur Jadwal Rekomendasi Saham Baru: Jam 16:30, KHUSUS hari Jumat
+	// (30 Menit setelah penutupan pasar di akhir pekan)
+	_, err = c.AddFunc("30 16 * * 5", func() {
+		log.Println("Menjalankan Weekly Stock Recommendation...")
 		processRecommendation(bot)
 	})
 

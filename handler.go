@@ -59,6 +59,8 @@ func handleMessages(bot *tgbotapi.BotAPI) {
 			processSellCommand(bot, args)
 		case "/research":
 			processResearchCommand(bot, args)
+		case "/evaluate":
+			processPortfolioEvaluation(bot)
 		default:
 			sendSimpleMessage(bot, "Gunakan perintah:\n`/buy [KODE] [HARGA] [LOT]`\n`/status` | `/recommend`")
 		}
