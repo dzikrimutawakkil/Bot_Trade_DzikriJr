@@ -42,73 +42,97 @@ type YahooChart struct {
 			Indicators struct {
 				Quote []struct {
 					Close []float64 `json:"close"`
+					Volume []float64 `json:"volume"`
 				} `json:"quote"`
 			} `json:"indicators"`
 		} `json:"result"`
 	} `json:"chart"`
 }
 
-// Fungsi BARU: Ambil data harga historis & hitung MA20 (Teknikal)
 func fetchTechnicalData(symbol string) string {
-	// Panggil API Yahoo Chart (1 bulan terakhir, interval harian)
-	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s.JK?interval=1d&range=1mo", symbol)
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Add("User-Agent", "Mozilla/5.0") // Biar gak dikira bot spam
+    // Panggil API Yahoo Chart (1 bulan terakhir, interval harian)
+    url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s.JK?interval=1d&range=1mo", symbol)
+    req, _ := http.NewRequest("GET", url, nil)
+    req.Header.Add("User-Agent", "Mozilla/5.0") 
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "Data teknikal gagal diambil."
-	}
-	defer resp.Body.Close()
+    client := &http.Client{Timeout: 10 * time.Second}
+    resp, err := client.Do(req)
+    if err != nil {
+        return "Data teknikal gagal diambil."
+    }
+    defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
-	var data YahooChart
-	json.Unmarshal(body, &data)
+    body, _ := io.ReadAll(resp.Body)
+    // Asumsi struct struct YahooChart sudah disesuaikan
+    var data YahooChart
+    json.Unmarshal(body, &data)
 
-	// Validasi data
-	if len(data.Chart.Result) == 0 || len(data.Chart.Result[0].Indicators.Quote) == 0 {
-		return "Data teknikal tidak ditemukan di bursa."
-	}
+    if len(data.Chart.Result) == 0 || len(data.Chart.Result[0].Indicators.Quote) == 0 {
+        return "Data teknikal tidak ditemukan di bursa."
+    }
 
-	closes := data.Chart.Result[0].Indicators.Quote[0].Close
-	var validCloses []float64
-	for _, c := range closes {
-		if c > 0 { // Hindari harga 0 saat hari libur bursa
-			validCloses = append(validCloses, c)
-		}
-	}
+    closes := data.Chart.Result[0].Indicators.Quote[0].Close
+    volumes := data.Chart.Result[0].Indicators.Quote[0].Volume
 
-	if len(validCloses) < 20 {
-		return "Data historis kurang dari 20 hari, MA20 tidak valid."
-	}
+    var validCloses []float64
+    var validVolumes []float64
 
-	// Hitung MA20 (Rata-rata harga 20 hari terakhir)
-	last20 := validCloses[len(validCloses)-20:]
-	var sum float64
-	for _, val := range last20 {
-		sum += val
-	}
-	ma20 := sum / 20.0
-	currentPrice := validCloses[len(validCloses)-1]
+    // Filter data kosong (hari libur) dan sinkronkan harga dengan volume
+    for i, c := range closes {
+        if c > 0 { 
+            validCloses = append(validCloses, c)
+            if i < len(volumes) {
+                validVolumes = append(validVolumes, volumes[i])
+            }
+        }
+    }
 
-	// Status Tren
-	statusMA := "DI BAWAH MA20 (Downtrend/Lemah)"
-	if currentPrice > ma20 {
-		statusMA = "DI ATAS MA20 (Uptrend/Kuat)"
-	}
+    if len(validCloses) < 20 || len(validVolumes) < 20 {
+        return "Data historis kurang dari 20 hari, indikator tidak valid."
+    }
 
-	// Ambil pergerakan 5 hari terakhir
-	last5 := validCloses[len(validCloses)-5:]
-	var trendStr []string
-	for _, val := range last5 {
-		trendStr = append(trendStr, fmt.Sprintf("%.0f", val))
-	}
+    // 1. Hitung MA20 (Harga)
+    last20Price := validCloses[len(validCloses)-20:]
+    var sumPrice float64
+    for _, val := range last20Price {
+        sumPrice += val
+    }
+    ma20 := sumPrice / 20.0
+    currentPrice := validCloses[len(validCloses)-1]
 
-	report := fmt.Sprintf("Harga Terakhir: Rp %.0f\nMA20: Rp %.0f\nStatus Teknikal: %s\nHarga 5 Hari Terakhir: %s",
-		currentPrice, ma20, statusMA, strings.Join(trendStr, " -> "))
+    statusMA := "DI BAWAH MA20 (Downtrend/Lemah)"
+    if currentPrice > ma20 {
+        statusMA = "DI ATAS MA20 (Uptrend/Kuat)"
+    }
 
-	return report
+    // 2. Hitung Rata-rata Volume 20 Hari (Volume MA20)
+    last20Vol := validVolumes[len(validVolumes)-20:]
+    var sumVol float64
+    for _, val := range last20Vol {
+        sumVol += val
+    }
+    avgVol20 := sumVol / 20.0
+    currentVol := validVolumes[len(validVolumes)-1]
+
+    // 3. Analisis Lonjakan Volume
+    statusVolume := "⚠️ VOLUME RENDAH (Kurang Konfirmasi)"
+    if currentVol > (avgVol20 * 1.5) { // Volume melonjak 50% di atas rata-rata
+        statusVolume = "🔥 LONJAKAN VOLUME (Validasi Kuat/Akumulasi)"
+    } else if currentVol > avgVol20 {
+        statusVolume = "✅ VOLUME NORMAL (Di Atas Rata-rata)"
+    }
+
+    // Ambil pergerakan 5 hari terakhir
+    last5 := validCloses[len(validCloses)-5:]
+    var trendStr []string
+    for _, val := range last5 {
+        trendStr = append(trendStr, fmt.Sprintf("%.0f", val))
+    }
+
+    report := fmt.Sprintf("Harga Terakhir: Rp %.0f\nMA20: Rp %.0f\nStatus Teknikal: %s\nStatus Volume: %s\nHarga 5 Hari Terakhir: %s",
+        currentPrice, ma20, statusMA, statusVolume, strings.Join(trendStr, " -> "))
+
+    return report
 }
 
 // Fungsi AI yang sudah di-UPGRADE (Menerima input Teknikal)
@@ -141,6 +165,7 @@ func getDeepAnalysis(symbol string, newsContent string, technicalContent string)
 
 		🎯 **Skor Sentimen:** [Angka 1-10]/10
 		📊 **Tren Teknikal:** [Bullish / Bearish / Sideways] (Berikan emoji 📈/📉/↔️)
+		🌊 **Volume:** [Tuliskan apakah akumulasi kuat atau sepi]
 		🔑 **Kata Kunci:** [3-5 kata kunci]
 
 		📝 **Kesimpulan Analisis:**
