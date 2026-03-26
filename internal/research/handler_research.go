@@ -1,4 +1,4 @@
-package telegram
+package research
 
 import (
 	"fmt"
@@ -12,7 +12,6 @@ import (
 	"learn-go/internal/config"
 	"learn-go/internal/utils"
 	"learn-go/internal/models"
-	"learn-go/internal/research"
 )
 
 // Logika /research yang tadinya di dalam loop
@@ -24,15 +23,15 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 	symbol := strings.ToUpper(args[1])
 	utils.SendSimpleMessage(bot, fmt.Sprintf("🧐 Memulai Deep Research untuk %s... (Mohon tunggu sebentar)", symbol))
 	
-	news, err := research.FetchNewsRSS(symbol)
+	news, err := FetchNewsRSS(symbol)
 	if err != nil {
 		utils.SendSimpleMessage(bot, "❌ Gagal mengambil berita.")
 		return
 	}
 
-	technicalData := research.FetchTechnicalData(symbol)
+	technicalData := FetchTechnicalData(symbol)
 
-	analysis, err := research.GetDeepAnalysis(symbol, news, technicalData)
+	analysis, err := GetDeepAnalysis(symbol, news, technicalData)
 	if err != nil {
 		utils.SendSimpleMessage(bot, "❌ Gagal melakukan analisis AI.")
 		return
@@ -57,7 +56,7 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 	utils.SendSimpleMessage(bot, "⏳ Proses sortir LQ45 sedang berlangsung...")
 
 	for _, s := range pool {
-		score, status, distToMA := research.GetStockScore(s) //
+		score, status, distToMA := GetStockScore(s) //
 		if score > 0 {
 			results = append(results, models.Recommendation{
 				Symbol:   s,
@@ -86,9 +85,9 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 	// INTEGRASI DEEP RESEARCH (Hanya untuk yang Hijau / Skor == 10)
 	for i, res := range topCandidates {
 		if res.Score == 10 {
-			news, _ := research.FetchNewsRSS(res.Symbol)
-			tech := research.FetchTechnicalData(res.Symbol)
-			analysis, err := research.GetDeepAnalysis(res.Symbol, news, tech)
+			news, _ := FetchNewsRSS(res.Symbol)
+			tech := FetchTechnicalData(res.Symbol)
+			analysis, err := GetDeepAnalysis(res.Symbol, news, tech)
 			
 			if err == nil && analysis != "" {
 				topCandidates[i].DeepAnalysis = analysis
@@ -164,7 +163,7 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 	bot.Send(msg)
 }
 
-func processNews(bot *tgbotapi.BotAPI, topStocks []string) {
+func ProcessNews(bot *tgbotapi.BotAPI, topStocks []string) {
 	var sb strings.Builder
 	sb.WriteString("📰 **Berita Khusus Saham Rekomendasi** 📰\n\n")
 

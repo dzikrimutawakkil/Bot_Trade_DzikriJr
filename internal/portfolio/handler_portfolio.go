@@ -1,4 +1,4 @@
-package telegram
+package portfolio
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 	"learn-go/internal/utils"
 )
 
-func processBuyCommand(bot *tgbotapi.BotAPI, args []string) {
+func ProcessBuyCommand(bot *tgbotapi.BotAPI, args []string) {
 	if len(args) < 4 {
 		utils.SendSimpleMessage(bot, "❌ Format salah! Gunakan: `/buy [KODE] [HARGA] [LOT]`")
 		return
@@ -39,7 +39,7 @@ func processBuyCommand(bot *tgbotapi.BotAPI, args []string) {
 }
 
 // Logika /sell yang tadinya numpuk di dalam loop, sekarang punya fungsi sendiri
-func processSellCommand(bot *tgbotapi.BotAPI, args []string) {
+func ProcessSellCommand(bot *tgbotapi.BotAPI, args []string) {
 	if len(args) != 2 {
 		utils.SendSimpleMessage(bot, "❌ Format salah! Gunakan: `/sell [KODE]`")
 		return
@@ -54,7 +54,7 @@ func processSellCommand(bot *tgbotapi.BotAPI, args []string) {
 	}
 }
 
-func processStatusCommand(bot *tgbotapi.BotAPI) {
+func ProcessStatusCommand(bot *tgbotapi.BotAPI) {
 	if len(config.MyStocks) == 0 {
 		utils.SendSimpleMessage(bot, "Belum ada saham yang dipantau.")
 		return
@@ -99,7 +99,7 @@ func processStatusCommand(bot *tgbotapi.BotAPI) {
 }
 
 // Logika /reset punya fungsi sendiri
-func processResetCommand(bot *tgbotapi.BotAPI) {
+func ProcessResetCommand(bot *tgbotapi.BotAPI) {
 	config.MyStocks = make(map[string]models.TradingPlan)
 	storage.SaveData()
 	utils.SendSimpleMessage(bot, "🧹 Semua pantauan dihapus!")

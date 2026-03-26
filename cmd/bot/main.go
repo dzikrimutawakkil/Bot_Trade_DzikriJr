@@ -34,14 +34,14 @@ func main() {
 	})
 
 	c.AddFunc("30 16 * * 5", func() {
-		telegram.ProcessRecommendation(bot) // Laporan Jumat sore
+		research.ProcessRecommendation(bot) // Laporan Jumat sore
 	})
 
 	c.Start()
 	
 	// Panggil Cron Job untuk Summary dari package research
 	research.RegisterCronJobs(bot)
-	
+
 	// Jalankan Monitor & Handler
 	go portfolio.StartPriceMonitor(bot)
 	telegram.HandleMessages(bot)

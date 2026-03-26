@@ -6,6 +6,7 @@ import (
 	"learn-go/internal/config"
 	"learn-go/internal/portfolio"
 	"learn-go/internal/utils"
+	"learn-go/internal/research"
 )
 
 func HandleMessages(bot *tgbotapi.BotAPI) {
@@ -23,7 +24,7 @@ func HandleMessages(bot *tgbotapi.BotAPI) {
 			if strings.HasPrefix(data, "news:") {
 				stockString := strings.TrimPrefix(data, "news:")
 				listSaham := strings.Split(stockString, ",")
-				processNews(bot, listSaham)
+				research.ProcessNews(bot, listSaham)
 				bot.Request(tgbotapi.NewCallback(update.CallbackQuery.ID, ""))
 			}
 			continue
@@ -43,13 +44,13 @@ func HandleMessages(bot *tgbotapi.BotAPI) {
 		// Cek teks UTUH terlebih dahulu (Untuk tombol keyboard)
 		switch text {
 		case "/status", "📊 Status":
-			processStatusCommand(bot)
+			portfolio.ProcessStatusCommand(bot)
 			continue
 		case "/recommend", "❓ Recomend":
-			ProcessRecommendation(bot)
+			research.ProcessRecommendation(bot)
 			continue
 		case "/reset":
-			processResetCommand(bot)
+			portfolio.ProcessResetCommand(bot)
 			continue
 		}
 
@@ -57,11 +58,11 @@ func HandleMessages(bot *tgbotapi.BotAPI) {
 		command := strings.ToLower(args[0])
 		switch command {
 		case "/buy":
-			processBuyCommand(bot, args)
+			portfolio.ProcessBuyCommand(bot, args)
 		case "/sell":
-			processSellCommand(bot, args)
+			portfolio.ProcessSellCommand(bot, args)
 		case "/research":
-			ProcessResearchCommand(bot, args)
+			research.ProcessResearchCommand(bot, args)
 		case "/evaluate":
 			portfolio.ProcessPortfolioEvaluation(bot)
 		default:
