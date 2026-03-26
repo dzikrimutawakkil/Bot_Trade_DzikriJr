@@ -12,6 +12,7 @@ import (
 	"learn-go/internal/portfolio"
 	"learn-go/internal/storage"
 	"learn-go/internal/telegram"
+	"learn-go/internal/research" // <-- Tambahkan import ini
 )
 
 func main() {
@@ -37,7 +38,10 @@ func main() {
 	})
 
 	c.Start()
-
+	
+	// Panggil Cron Job untuk Summary dari package research
+	research.RegisterCronJobs(bot)
+	
 	// Jalankan Monitor & Handler
 	go portfolio.StartPriceMonitor(bot)
 	telegram.HandleMessages(bot)
