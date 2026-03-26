@@ -14,45 +14,60 @@ import (
 	"learn-go/internal/models"
 	"learn-go/internal/utils"
 	"learn-go/internal/research"
+	"learn-go/internal/market" // Tambahkan import market untuk get harga live
 )
 
-func getPortfolioEvaluation(plan models.TradingPlan, newsContent string, technicalContent string) (string, error) {
+func getPortfolioEvaluation(plan models.TradingPlan, currentPrice float64, newsContent string, technicalContent string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Asumsi kamu sudah punya inisialisasi client Gemini seperti di handler_research.go
 	client, err := genai.NewClient(ctx, option.WithAPIKey(config.GeminiAPIKey)) 
 	if err != nil {
 		return "", err
 	}
 	defer client.Close()
 
-	model := client.GenerativeModel("gemini-flash-latest")
+	// Gunakan versi 1.5-flash yang lebih stabil
+	model := client.GenerativeModel("gemini-1.5-flash")
+
+	// 1. Hitung Floating PNL
+	floatingPNL := ((currentPrice - plan.EntryPrice) / plan.EntryPrice) * 100
+
+	// 2. Hitung Batas TSL Saat Ini
+	tslLimit := plan.HighestPrice * (1 - config.TrailingStopPercent)
 
 	prompt := fmt.Sprintf(`
-		Bertindaklah sebagai Pengawas Portofolio Saham Profesional.
-		Saya saat ini sedang memegang saham %s dengan Harga Beli (Average) di Rp %.0f.
-		Target Take Profit (TP) saya di Rp %.0f dan batas Cut Loss (CL) di Rp %.0f.
+		Bertindaklah sebagai Manajer Portofolio Saham Profesional dengan spesialisasi strategi SWING TRADING (target hold 1-3 minggu).
+		Evaluasi posisi saham %s yang sedang saya pegang saat ini dari kacamata seorang Swing Trader.
 
-		Berdasarkan data hari ini:
-		[DATA FUNDAMENTAL & BERITA TERBARU]
+		[STATUS POSISI SAYA]
+		- Harga Beli (Avg): Rp %.0f
+		- Harga Saat Ini: Rp %.0f (Floating: %.2f%%)
+		- Rekor Harga Pucuk: Rp %.0f
+		- Batas Trailing Stop (TSL): Rp %.0f (Batas aman pengunci profit / cut loss dinamis)
+		- Target Take Profit Awal: Rp %.0f
+
+		[DATA FUNDAMENTAL & BERITA]
 		%s
 
-		[DATA TEKNIKAL & HARGA TERAKHIR]
+		[DATA TEKNIKAL]
 		%s
 
-		Evaluasi apakah saham ini masih memiliki momentum untuk mencapai target TP, atau justru menunjukkan sinyal pelemahan yang berisiko menyentuh CL.
+		Sebagai Swing Trader, fokuslah pada momentum jangka pendek-menengah. Evaluasi apakah saham ini masih punya "bensin" untuk lanjut naik, atau trennya sudah mulai patah sehingga lebih baik mengamankan profit/cut loss sekarang sebelum menyentuh batas Trailing Stop.
 
 		WAJIB gunakan format persis seperti di bawah ini dengan Markdown:
 
-		🛡️ **Saham:** %s (Avg: Rp %.0f)
-		🚦 **Status:** [AMAN (Hold) / WASPADA (Siap Jual) / BAHAYA (Cut Loss)]
-		🎯 **Peluang ke TP:** [Tinggi / Sedang / Rendah]
-		📉 **Risiko ke CL:** [Tinggi / Sedang / Rendah]
+		🛡️ **Saham:** %s (Avg: Rp %.0f | Now: Rp %.0f)
+		💰 **Floating:** %.2f%%
+		🚦 **Tindakan:** [AMAN (Hold) / WASPADA (Siap Jual) / KUNCI PROFIT (Jual Sekarang) / BAHAYA (Cut Loss)]
+		🎯 **Potensi Lanjut Naik:** [Tinggi / Sedang / Rendah]
 
-		📝 **Analisis Kondisi:**
-		[Tulis 2-3 kalimat analisis mengapa statusnya demikian. Apakah ada berita buruk baru? Atau teknikal patah tren? Langsung to the point.]
-	`, plan.Symbol, plan.EntryPrice, plan.TakeProfit, plan.CutLoss, newsContent, technicalContent, plan.Symbol, plan.EntryPrice)
+		📝 **Saran Strategi:**
+		[Berikan 2-3 kalimat tajam ala Swing Trader. Evaluasi posisi harga saat ini terhadap batas TSL (Rp %.0f) dan MA20. Beritahu apakah lebih baik biarkan harga berlari (let your profit run) atau amankan cuan sekarang karena indikasi overbought/distribusi.]
+	`, 
+		plan.Symbol, plan.EntryPrice, currentPrice, floatingPNL, plan.HighestPrice, tslLimit, plan.TakeProfit, 
+		newsContent, technicalContent, 
+		plan.Symbol, plan.EntryPrice, currentPrice, floatingPNL, tslLimit)
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
@@ -76,25 +91,31 @@ func ProcessPortfolioEvaluation(bot *tgbotapi.BotAPI) {
 		return
 	}
 
-	utils.SendSimpleMessage(bot, "🔄 _Sedang menganalisa kondisi portofolio hari ini..._")
+	utils.SendSimpleMessage(bot, "🔄 _Menyiapkan Rapat Pagi: Evaluasi Portofolio..._")
 
 	var finalReport strings.Builder
-	finalReport.WriteString("📊 **LAPORAN EARLY WARNING SYSTEM PORTOFOLIO** 📊\n\n")
+	finalReport.WriteString("📋 **MORNING BRIEFING: EVALUASI PORTOFOLIO** 📋\n\n")
 
 	for symbol, plan := range config.MyStocks {
-		// Asumsi FetchNewsRSS dan FetchTechnicalData sudah ada di file lain (scrapper.go/analyst.go)
+		// Ambil data harga terbaru pagi ini
+		currentPrice := market.GetLivePrice(symbol)
+		if currentPrice == 0 {
+			currentPrice = plan.EntryPrice // Fallback jika API gagal
+		}
+
 		newsContent, err := research.FetchNewsRSS(symbol)
 		if err != nil {
 			newsContent = "Tidak ada berita terbaru."
 		}
 
+		// Ambil technical string
 		technicalContent := research.FetchTechnicalData(symbol)
 
-		// Evaluasi via Gemini
-		eval, err := getPortfolioEvaluation(plan, newsContent, technicalContent)
+		// Evaluasi via Gemini dengan tambahan parameter currentPrice
+		eval, err := getPortfolioEvaluation(plan, currentPrice, newsContent, technicalContent)
 		if err != nil {
 			log.Println("❌ Gagal mendapatkan evaluasi AI untuk", symbol, ":", err)
-			finalReport.WriteString(fmt.Sprintf("⚠️ **%s**: Gagal mendapatkan evaluasi AI.\n\n", symbol))
+			finalReport.WriteString(fmt.Sprintf("⚠️ **%s**: Gagal mendapatkan AI.\n\n", symbol))
 			continue
 		}
 
@@ -102,7 +123,7 @@ func ProcessPortfolioEvaluation(bot *tgbotapi.BotAPI) {
 		finalReport.WriteString("\n━━━━━━━━━━━━━━━━━━━━\n\n")
 		
 		// Jeda agar tidak terkena limit API Gemini
-		time.Sleep(2 * time.Second)
+		time.Sleep(3 * time.Second)
 	}
 
 	utils.SendMarkdownMessage(bot, finalReport.String())
