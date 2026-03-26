@@ -1,4 +1,4 @@
-package main
+package portfolio
 
 import (
 	"context"
@@ -10,14 +10,18 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
+	"learn-go/internal/config"
+	"learn-go/internal/models"
+	"learn-go/internal/utils"
+	"learn-go/internal/research"
 )
 
-func getPortfolioEvaluation(plan TradingPlan, newsContent string, technicalContent string) (string, error) {
+func getPortfolioEvaluation(plan models.TradingPlan, newsContent string, technicalContent string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	// Asumsi kamu sudah punya inisialisasi client Gemini seperti di handler_research.go
-	client, err := genai.NewClient(ctx, option.WithAPIKey(GeminiAPIKey)) 
+	client, err := genai.NewClient(ctx, option.WithAPIKey(config.GeminiAPIKey)) 
 	if err != nil {
 		return "", err
 	}
@@ -66,25 +70,25 @@ func getPortfolioEvaluation(plan TradingPlan, newsContent string, technicalConte
 	return "AI tidak memberikan respon evaluasi.", nil
 }
 
-func processPortfolioEvaluation(bot *tgbotapi.BotAPI) {
-	if len(myStocks) == 0 {
+func ProcessPortfolioEvaluation(bot *tgbotapi.BotAPI) {
+	if len(config.MyStocks) == 0 {
 		log.Println("Portofolio kosong, skip evaluasi harian.")
 		return
 	}
 
-	sendSimpleMessage(bot, "🔄 _Sedang menganalisa kondisi portofolio hari ini..._")
+	utils.SendSimpleMessage(bot, "🔄 _Sedang menganalisa kondisi portofolio hari ini..._")
 
 	var finalReport strings.Builder
 	finalReport.WriteString("📊 **LAPORAN EARLY WARNING SYSTEM PORTOFOLIO** 📊\n\n")
 
-	for symbol, plan := range myStocks {
-		// Asumsi fetchNewsRSS dan fetchTechnicalData sudah ada di file lain (scrapper.go/analyst.go)
-		newsContent, err := fetchNewsRSS(symbol)
+	for symbol, plan := range config.MyStocks {
+		// Asumsi FetchNewsRSS dan FetchTechnicalData sudah ada di file lain (scrapper.go/analyst.go)
+		newsContent, err := research.FetchNewsRSS(symbol)
 		if err != nil {
 			newsContent = "Tidak ada berita terbaru."
 		}
 
-		technicalContent := fetchTechnicalData(symbol)
+		technicalContent := research.FetchTechnicalData(symbol)
 
 		// Evaluasi via Gemini
 		eval, err := getPortfolioEvaluation(plan, newsContent, technicalContent)
@@ -101,5 +105,5 @@ func processPortfolioEvaluation(bot *tgbotapi.BotAPI) {
 		time.Sleep(2 * time.Second)
 	}
 
-	sendMarkdownMessage(bot, finalReport.String())
+	utils.SendMarkdownMessage(bot, finalReport.String())
 }

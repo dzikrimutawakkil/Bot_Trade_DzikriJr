@@ -1,4 +1,4 @@
-package main
+package research
 
 import (
 	"fmt"
@@ -7,6 +7,10 @@ import (
 
 	"github.com/robfig/cron/v3"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	
+	"learn-go/internal/market"
+	"learn-go/internal/config"
+	"learn-go/internal/utils"
 )
 
 // RegisterCronJobs mendaftarkan jadwal laporan otomatis ke Telegram
@@ -36,7 +40,7 @@ func RegisterCronJobs(bot *tgbotapi.BotAPI) {
 
 // runDailySummary mengolah data portofolio menjadi pesan rangkuman
 func runDailySummary(bot *tgbotapi.BotAPI, title string) {
-	if len(myStocks) == 0 {
+	if len(config.MyStocks) == 0 {
 		return // Tidak kirim apa-apa jika portofolio kosong
 	}
 
@@ -47,13 +51,13 @@ func runDailySummary(bot *tgbotapi.BotAPI, title string) {
 	var totalPNL float64
 	var sourceMarker string // 1. DEKLARASIKAN DI LUAR LOOP
 
-	for _, plan := range myStocks {
+	for _, plan := range config.MyStocks {
 		// Ambil harga real-time (Google) dengan fallback ke Yahoo
-		price := getGooglePrice(plan.Symbol)
+		price := market.GetGooglePrice(plan.Symbol)
 		
 		sourceMarker = "Real-Time" // 2. GUNAKAN = (BUKAN :=)
 		if price == 0 {
-			price = getLivePrice(plan.Symbol)
+			price = market.GetLivePrice(plan.Symbol)
 			sourceMarker = "Kemungkinan Delay 15m"
 		}
 
@@ -70,21 +74,21 @@ func runDailySummary(bot *tgbotapi.BotAPI, title string) {
 
 		sb.WriteString(fmt.Sprintf("🔹 **%s**\n", plan.Symbol))
 		sb.WriteString(fmt.Sprintf("   PNL: %s (%.2f%%) %s\n\n",
-			formatRupiah(pnl),
+			utils.FormatRupiah(pnl),
 			perf,
 			emoji,
 		))
 	}
 
 	sb.WriteString("---")
-	sb.WriteString(fmt.Sprintf("\n💰 **Total Profit/Loss: %s**", formatRupiah(totalPNL)))
+	sb.WriteString(fmt.Sprintf("\n💰 **Total Profit/Loss: %s**", utils.FormatRupiah(totalPNL)))
 	sb.WriteString("\n\nData diambil " + sourceMarker + ".")
 
 	// Pesan penutup santai
 	sb.WriteString("\n\n_Bot tetap siaga memantau. Lanjutkan aktivitasmu, dan semoga cuan selalu menyertai!_")
 
 	// Kirim pesan menggunakan MyChatID yang ada di config/main
-	msg := tgbotapi.NewMessage(MyChatID, sb.String())
+	msg := tgbotapi.NewMessage(config.MyChatID, sb.String())
 	msg.ParseMode = "Markdown"
 	bot.Send(msg)
 }

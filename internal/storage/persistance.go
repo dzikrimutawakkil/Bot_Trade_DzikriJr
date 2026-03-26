@@ -1,17 +1,18 @@
-package main
+package storage
 
 import (
 	"encoding/json"
 	"io/ioutil"
 	"log"
 	"os"
+	"learn-go/internal/config"
 )
 
 const StorageFile = "stocks.json"
 
-// saveData menyimpan map myStocks ke dalam file JSON
-func saveData() {
-	data, err := json.MarshalIndent(myStocks, "", "  ")
+// SaveData menyimpan map config.MyStocks ke dalam file JSON
+func SaveData() {
+	data, err := json.MarshalIndent(config.MyStocks, "", "  ")
 	if err != nil {
 		log.Printf("❌ Gagal menukar data ke JSON: %v", err)
 		return
@@ -23,8 +24,8 @@ func saveData() {
 	}
 }
 
-// loadData membaca data dari file JSON saat bot baru dinyalakan
-func loadData() {
+// LoadData membaca data dari file JSON saat bot baru dinyalakan
+func LoadData() {
 	if _, err := os.Stat(StorageFile); os.IsNotExist(err) {
 		log.Println("ℹ️ File penyimpanan belum ada, memulai data baru.")
 		return
@@ -36,10 +37,10 @@ func loadData() {
 		return
 	}
 
-	err = json.Unmarshal(data, &myStocks)
+	err = json.Unmarshal(data, &config.MyStocks)
 	if err != nil {
 		log.Printf("❌ Gagal decode JSON: %v", err)
 	} else {
-		log.Printf("✅ Berhasil memuat %d saham dari penyimpanan.", len(myStocks))
+		log.Printf("✅ Berhasil memuat %d saham dari penyimpanan.", len(config.MyStocks))
 	}
 }

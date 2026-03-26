@@ -1,11 +1,14 @@
-package main
+package telegram
 
 import (
 	"strings"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"learn-go/internal/config"
+	"learn-go/internal/portfolio"
+	"learn-go/internal/utils"
 )
 
-func handleMessages(bot *tgbotapi.BotAPI) {
+func HandleMessages(bot *tgbotapi.BotAPI) {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 	updates := bot.GetUpdatesChan(u)
@@ -13,7 +16,7 @@ func handleMessages(bot *tgbotapi.BotAPI) {
 	for update := range updates {
 		// --- 1. LOGIKA UNTUK KLIK TOMBOL INLINE (Berita) ---
 		if update.CallbackQuery != nil {
-			if update.CallbackQuery.From.ID != MyChatID {
+			if update.CallbackQuery.From.ID != config.MyChatID {
 				continue
 			}
 			data := update.CallbackQuery.Data
@@ -27,7 +30,7 @@ func handleMessages(bot *tgbotapi.BotAPI) {
 		}
 
 		// --- 2. LOGIKA UNTUK PESAN TEKS & TOMBOL KEYBOARD ---
-		if update.Message == nil || update.Message.From.ID != MyChatID {
+		if update.Message == nil || update.Message.From.ID != config.MyChatID {
 			continue
 		}
 
@@ -43,7 +46,7 @@ func handleMessages(bot *tgbotapi.BotAPI) {
 			processStatusCommand(bot)
 			continue
 		case "/recommend", "❓ Recomend":
-			processRecommendation(bot)
+			ProcessRecommendation(bot)
 			continue
 		case "/reset":
 			processResetCommand(bot)
@@ -58,11 +61,11 @@ func handleMessages(bot *tgbotapi.BotAPI) {
 		case "/sell":
 			processSellCommand(bot, args)
 		case "/research":
-			processResearchCommand(bot, args)
+			ProcessResearchCommand(bot, args)
 		case "/evaluate":
-			processPortfolioEvaluation(bot)
+			portfolio.ProcessPortfolioEvaluation(bot)
 		default:
-			sendSimpleMessage(bot, "Gunakan perintah:\n`/buy [KODE] [HARGA] [LOT]`\n`/status` | `/recommend`")
+			utils.SendSimpleMessage(bot, "Gunakan perintah:\n`/buy [KODE] [HARGA] [LOT]`\n`/status` | `/recommend`")
 		}
 	}
 }

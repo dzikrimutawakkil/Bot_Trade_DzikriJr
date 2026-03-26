@@ -1,7 +1,10 @@
-package main
+package research
 
 import (
 	"fmt"
+    "learn-go/internal/market"
+    "learn-go/internal/config"
+    "learn-go/internal/utils"
 )
 
 func calculateMA(prices []float64, period int) float64 {
@@ -28,8 +31,8 @@ func calculateRSI(prices []float64) float64 {
 	return 100 - (100 / (1 + rs))
 }
 
-func getStockScore(symbol string) (float64, string, float64) {
-    data, err := getHistoricalPrices(symbol)
+func GetStockScore(symbol string) (float64, string, float64) {
+    data, err := market.GetHistoricalPrices(symbol)
     if err != nil { return -1, "", -1 }
 
     prices := data.Prices
@@ -50,14 +53,14 @@ func getStockScore(symbol string) (float64, string, float64) {
     score := 0.0
     verdict := ""
     
-    targetPrice := lastPrice * (1 + TPPercent)
-    potentialGain := TPPercent * 100
+    targetPrice := lastPrice * (1 + config.TPPercent)
+    potentialGain := config.TPPercent * 100
 
     // 1. 🟢 HIJAU (Kondisi Sempurna)
     if lastPrice > ma20 && rsi >= 40 && rsi <= 60 {
         score = 10
         verdict = fmt.Sprintf("🟢 **BELI SEKARANG**\n   🎯 Target: %s (+%.1f%%)\n   🕒 Estimasi: 14-30 hari\n   💡 Alasan: Tren naik dan harga masih wajar.", 
-            formatRupiah(targetPrice), potentialGain)
+            utils.FormatRupiah(targetPrice), potentialGain)
 
     // 2. 🟠 SIAGA (Mendekati Hijau)
     // Logika: Harga dikit lagi nembus MA20 (selisih < 2%) DAN RSI sudah mulai kuat (> 38)
