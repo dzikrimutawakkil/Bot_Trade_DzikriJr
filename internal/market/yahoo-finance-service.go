@@ -86,6 +86,7 @@ func GetHistoricalPrices(symbol string) (models.HistoricalData, error) {
 	if len(data.Chart.Result) > 0 {
 		return models.HistoricalData{
 			Prices: data.Chart.Result[0].Indicators.Quote[0].Close,
+			Volumes: data.Chart.Result[0].Indicators.Quote[0].Volume,
 			Symbol: symbol,
 		}, nil
 	}

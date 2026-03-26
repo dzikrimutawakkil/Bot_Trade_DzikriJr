@@ -42,5 +42,6 @@ type TradingPlan struct {
 // [FIX 2] Ubah namanya kembali jadi HistoricalData karena service.go nyari nama ini
 type HistoricalData struct {
 	Prices []float64
+	Volumes []float64
 	Symbol string
 }

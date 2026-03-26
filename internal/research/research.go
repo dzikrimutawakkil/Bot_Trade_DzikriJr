@@ -141,7 +141,7 @@ func GetDeepAnalysis(symbol string, newsContent string, technicalContent string)
 	// Prompt yang jauh lebih canggih & tajam
 	// Prompt yang sudah di-UPGRADE untuk tampilan Telegram yang cantik
 	prompt := fmt.Sprintf(`
-		Bertindaklah sebagai Analis Saham Profesional.
+		Bertindaklah sebagai Analis Saham Profesional khusus **Swing Trading (Hold 1-3 Minggu)**.
 		Analisis saham %s berdasarkan data berikut:
 
 		[DATA FUNDAMENTAL & SENTIMEN BERITA]
@@ -160,7 +160,12 @@ func GetDeepAnalysis(symbol string, newsContent string, technicalContent string)
 		📝 **Kesimpulan Analisis:**
 		[Tulis 2-3 kalimat padat. Jangan buat satu paragraf panjang yang sumpek, gunakan enter/baris baru jika perlu agar nyaman dibaca.]
 
-		🟢 **REKOMENDASI: [BELI / TAHAN / JUAL]** Alasan: [Satu kalimat penjelasan yang solid]
+		[PILIH HANYA SALAH SATU FORMAT REKOMENDASI DI BAWAH INI SESUAI KESIMPULANMU:]
+		🟢 **REKOMENDASI: BELI**
+		🟡 **REKOMENDASI: TAHAN**
+		🔴 **REKOMENDASI: JUAL**
+
+		_Alasan: [Satu kalimat solid yang menjelaskan alasan spesifik dari rekomendasi di atas untuk jangka waktu 1-3 minggu ke depan.]_
 		`, symbol, newsContent, technicalContent)
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))

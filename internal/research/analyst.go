@@ -35,19 +35,32 @@ func GetStockScore(symbol string) (float64, string, float64) {
     data, err := market.GetHistoricalPrices(symbol)
     if err != nil { return -1, "", -1 }
 
-    prices := data.Prices
+    // [UPDATE 1]: Membersihkan Price dan Volume secara bersamaan agar index-nya sinkron
     var cleanPrices []float64
-    for _, p := range prices {
-        if p > 0 { cleanPrices = append(cleanPrices, p) }
+    var cleanVolumes []float64
+    for i, p := range data.Prices {
+        // Pastikan harga valid dan data volume tersedia di index yang sama
+        if p > 0 && i < len(data.Volumes) && data.Volumes[i] > 0 { 
+            cleanPrices = append(cleanPrices, p)
+            cleanVolumes = append(cleanVolumes, data.Volumes[i])
+        }
     }
+    
+    // Ubah minimal data jadi 50 hari karena kita butuh MA50
     if len(cleanPrices) < 50 { return -1, "Data kurang", -1 }
 
+    // --- KALKULASI INDIKATOR ---
     lastPrice := cleanPrices[len(cleanPrices)-1]
     ma20 := calculateMA(cleanPrices, 20)
-    rsi := calculateRSI(cleanPrices)
+    ma50 := calculateMA(cleanPrices, 50) // [UPDATE 2]: Filter trend menengah (Swing)
+    
+    lastVol := cleanVolumes[len(cleanVolumes)-1]
+    avgVol := calculateMA(cleanVolumes, 20) // [UPDATE 3]: Rata-rata volume 20 hari
+    
+    rsiToday := calculateRSI(cleanPrices)
+    rsiYesterday := calculateRSI(cleanPrices[:len(cleanPrices)-1]) // [UPDATE 4]: Momentum naik
 
-	// Hitung jarak harga ke MA20 dalam persen
-    // Contoh: Harga 1050, MA20 1000 -> Jarak 5%
+    // Hitung jarak harga ke MA20 dalam persen
     distToMA := ((lastPrice - ma20) / ma20) * 100
 
     score := 0.0
@@ -56,27 +69,38 @@ func GetStockScore(symbol string) (float64, string, float64) {
     targetPrice := lastPrice * (1 + config.TPPercent)
     potentialGain := config.TPPercent * 100
 
-    // 1. 🟢 HIJAU (Kondisi Sempurna)
-    if lastPrice > ma20 && rsi >= 40 && rsi <= 60 {
-        score = 10
-        verdict = fmt.Sprintf("🟢 **BELI SEKARANG**\n   🎯 Target: %s (+%.1f%%)\n   🕒 Estimasi: 14-30 hari\n   💡 Alasan: Tren naik dan harga masih wajar.", 
-            utils.FormatRupiah(targetPrice), potentialGain)
+    // --- LOGIKA SKORING ---
+
+    // 1. 🟢 HIJAU (Kondisi Sempurna untuk Swing Trade)
+    // Syarat diperketat: Uptrend menengah (ma20 > ma50) & Momentum kuat (rsiToday > rsiYesterday)
+    if lastPrice > ma20 && ma20 > ma50 && rsiToday > rsiYesterday && rsiToday >= 40 && rsiToday <= 65 {
+        
+        // Cek Konfirmasi Volume Bandar
+        if lastVol > avgVol {
+            score = 10
+            verdict = fmt.Sprintf("🟢 **BELI SEKARANG**\n   🎯 Target: %s (+%.1f%%)\n   🕒 Estimasi: 14-30 hari\n   💡 Alasan: Uptrend aman (MA20>MA50), RSI menanjak, dan didukung Volume Akumulasi besar.", 
+                utils.FormatRupiah(targetPrice), potentialGain)
+        } else {
+            // Jika teknikal bagus tapi volume sepi, kasih peringatan
+            score = 7 
+            verdict = "🟡 **NAIK TAPI SEPI**\nAlasan: Secara harga bagus, tapi volume transaksi di bawah rata-rata. Rawan false breakout/bantingan."
+        }
 
     // 2. 🟠 SIAGA (Mendekati Hijau)
-    // Logika: Harga dikit lagi nembus MA20 (selisih < 2%) DAN RSI sudah mulai kuat (> 38)
-    } else if lastPrice < ma20 && lastPrice >= (ma20 * 0.98) && rsi >= 38 {
+    // Logika: Harga dikit lagi nembus MA20 (selisih < 2%) DAN RSI mulai masuk area wajar
+    } else if lastPrice < ma20 && lastPrice >= (ma20 * 0.98) && rsiToday >= 38 {
         score = 8 // Skor tinggi supaya muncul di urutan atas setelah hijau
         verdict = "🟠 **SIAGA SATU**\nAlasan: Dikit lagi harganya nembus area naik. Pantau ketat, siap-siap tarik dana dari RDPU!"
 
-    // 3. 🟡 KUNING (Kepanasan)
-    } else if lastPrice > ma20 && rsi > 60 {
+    // 3. 🟡 KUNING (Kepanasan / Overbought)
+    } else if lastPrice > ma20 && rsiToday > 65 {
         score = 5
         verdict = "🟡 **TUNGGU DULU**\nAlasan: Lagi naik kencang, risiko 'kemahalan' tinggi. Tunggu harga turun dikit (koreksi) baru sikat."
 
     // 4. 🔴 MERAH (Bahaya/Turun)
     } else {
         score = 1
-        verdict = "🔴 **JANGAN BELI**\nAlasan: Trennya masih turun parah. Jangan dilirik dulu sampai ada tanda-tanda harganya mantul."
+        verdict = "🔴 **JANGAN BELI**\nAlasan: Trennya masih turun parah (Downtrend). Jangan dilirik dulu sampai ada tanda-tanda harganya mantul."
     }
 
     return score, verdict, distToMA
