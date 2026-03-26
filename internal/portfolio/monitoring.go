@@ -45,7 +45,7 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 			// -------------------------------------------------------------
 
 			// Hitung persentase PNL dari Yahoo
-			yahooPNL := (yahooPrice - plan.EntryPrice) / plan.EntryPrice * 100
+			yahooPNL := utils.CalculateNetPNL(plan.EntryPrice, yahooPrice, config.BuyFee, config.SellFee)
 
 			// Hitung batas Trailing Stop dinamis (Cut Loss berdasarkan pucuk)
 			// Misal plan.HighestPrice = 1000, TrailingStopPercent = 0.04 (4%), TSL = 960
@@ -63,7 +63,7 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 					realPrice = yahooPrice
 				}
 
-				realPNL := (realPrice - plan.EntryPrice) / plan.EntryPrice * 100
+				realPNL := utils.CalculateNetPNL(plan.EntryPrice, realPrice, config.BuyFee, config.SellFee)
 				
 				// Verifikasi TSL dengan harga real
 				realTslTriggered := realPrice <= tslPrice

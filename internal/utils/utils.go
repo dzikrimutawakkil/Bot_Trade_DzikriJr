@@ -67,3 +67,15 @@ func SendMarkdownMessage(bot *tgbotapi.BotAPI, text string) {
         bot.Send(msg)
     }
 }
+
+// CalculateNetPNL menghitung persentase profit bersih setelah dipotong fee beli dan jual
+func CalculateNetPNL(entryPrice float64, currentPrice float64, buyFee float64, sellFee float64) float64 {
+	// Modal asli = Harga beli + fee beli
+	totalBuyCapital := entryPrice * (1 + buyFee)
+	
+	// Uang diterima = Harga jual - fee jual
+	netSellValue := currentPrice * (1 - sellFee)
+	
+	// Rumus untung bersih
+	return ((netSellValue - totalBuyCapital) / totalBuyCapital) * 100
+}

@@ -31,7 +31,7 @@ func getPortfolioEvaluation(plan models.TradingPlan, currentPrice float64, newsC
 	model := client.GenerativeModel("gemini-1.5-flash")
 
 	// 1. Hitung Floating PNL
-	floatingPNL := ((currentPrice - plan.EntryPrice) / plan.EntryPrice) * 100
+	floatingPNL := utils.CalculateNetPNL(plan.EntryPrice, currentPrice, config.BuyFee, config.SellFee)
 
 	// 2. Hitung Batas TSL Saat Ini
 	tslLimit := plan.HighestPrice * (1 - config.TrailingStopPercent)
