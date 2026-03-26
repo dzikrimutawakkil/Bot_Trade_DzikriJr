@@ -135,7 +135,7 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 		}
 
 		// Header saham yang minimalis seperti seleramu
-		sb.WriteString(fmt.Sprintf("━━━━━━━━━ %s **%s** %s ━━━━━━━━━\n\n", emoji, res.Symbol, emoji,))
+		sb.WriteString(fmt.Sprintf("━━━━━━ %s **%s** %s ━━━━━━\n\n", emoji, res.Symbol, emoji,))
 		
 		if res.Score == 10 && res.DeepAnalysis != "" {
 			cleanAnalysis := strings.Replace(res.DeepAnalysis, "Hasil Deep Research:", "", 1)
