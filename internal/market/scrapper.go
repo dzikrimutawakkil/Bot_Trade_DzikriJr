@@ -1,4 +1,4 @@
-package main
+package market
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-func getGooglePrice(symbol string) float64 {
+func GetGooglePrice(symbol string) float64 {
 	url := fmt.Sprintf("https://www.google.com/finance/quote/%s:IDX", symbol)
 
 	client := &http.Client{Timeout: 10 * time.Second}

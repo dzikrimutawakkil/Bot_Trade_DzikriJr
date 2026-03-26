@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"fmt"
@@ -6,10 +6,11 @@ import (
 	"time"
 	"log"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"learn-go/internal/config"
 )
 
-// formatRupiah mengubah float64 ke format Rp. 1.234
-func formatRupiah(amount float64) string {
+// FormatRupiah mengubah float64 ke format Rp. 1.234
+func FormatRupiah(amount float64) string {
 	s := fmt.Sprintf("%.0f", amount)
 	if len(s) <= 3 {
 		return "Rp. " + s
@@ -25,8 +26,8 @@ func formatRupiah(amount float64) string {
 	return "Rp. " + strings.Join(result, ".")
 }
 
-// isMarketOpen mengecek jam buka bursa (WIB)
-func isMarketOpen() bool {
+// IsMarketOpen mengecek jam buka bursa (WIB)
+func IsMarketOpen() bool {
 	loc, _ := time.LoadLocation("Asia/Jakarta")
 	now := time.Now().In(loc)
 
@@ -46,14 +47,14 @@ var mainKeyboard = tgbotapi.NewReplyKeyboard(
     ),
 )
 
-func sendSimpleMessage(bot *tgbotapi.BotAPI, text string) {
-	msg := tgbotapi.NewMessage(MyChatID, text)
+func SendSimpleMessage(bot *tgbotapi.BotAPI, text string) {
+	msg := tgbotapi.NewMessage(config.MyChatID, text)
 	msg.ReplyMarkup = mainKeyboard
 	bot.Send(msg)
 }
 
-func sendMarkdownMessage(bot *tgbotapi.BotAPI, text string) {
-    msg := tgbotapi.NewMessage(MyChatID, text)
+func SendMarkdownMessage(bot *tgbotapi.BotAPI, text string) {
+    msg := tgbotapi.NewMessage(config.MyChatID, text)
     msg.ParseMode = "Markdown"
 
     msg.ReplyMarkup = mainKeyboard 

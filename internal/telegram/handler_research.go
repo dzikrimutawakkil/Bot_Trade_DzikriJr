@@ -1,4 +1,4 @@
-package main
+package telegram
 
 import (
 	"fmt"
@@ -8,36 +8,41 @@ import (
 	"regexp"
 	"time"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
+	"learn-go/internal/config"
+	"learn-go/internal/utils"
+	"learn-go/internal/models"
+	"learn-go/internal/research"
 )
 
 // Logika /research yang tadinya di dalam loop
-func processResearchCommand(bot *tgbotapi.BotAPI, args []string) {
+func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 	if len(args) != 2 {
-		sendSimpleMessage(bot, "❌ Format salah! Gunakan: `/research [KODE]`")
+		utils.SendSimpleMessage(bot, "❌ Format salah! Gunakan: `/research [KODE]`")
 		return
 	}
 	symbol := strings.ToUpper(args[1])
-	sendSimpleMessage(bot, fmt.Sprintf("🧐 Memulai Deep Research untuk %s... (Mohon tunggu sebentar)", symbol))
+	utils.SendSimpleMessage(bot, fmt.Sprintf("🧐 Memulai Deep Research untuk %s... (Mohon tunggu sebentar)", symbol))
 	
-	news, err := fetchNewsRSS(symbol)
+	news, err := research.FetchNewsRSS(symbol)
 	if err != nil {
-		sendSimpleMessage(bot, "❌ Gagal mengambil berita.")
+		utils.SendSimpleMessage(bot, "❌ Gagal mengambil berita.")
 		return
 	}
 
-	technicalData := fetchTechnicalData(symbol)
+	technicalData := research.FetchTechnicalData(symbol)
 
-	analysis, err := getDeepAnalysis(symbol, news, technicalData)
+	analysis, err := research.GetDeepAnalysis(symbol, news, technicalData)
 	if err != nil {
-		sendSimpleMessage(bot, "❌ Gagal melakukan analisis AI.")
+		utils.SendSimpleMessage(bot, "❌ Gagal melakukan analisis AI.")
 		return
 	}
 
 	response := fmt.Sprintf("🔍 **Hasil Deep Research: %s**\n\n%s", symbol, analysis)
-	sendMarkdownMessage(bot, response)
+	utils.SendMarkdownMessage(bot, response)
 }
 
-func processRecommendation(bot *tgbotapi.BotAPI) {
+func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 	pool := []string{
 		"ACES", "ADRO", "AKRA", "AMRT", "ANKM", "ASII", "BBCA", "BBNI", "BBRI", "BBTN",
 		"BMRI", "BRIS", "BRPT", "BUKA", "CPIN", "EMTK", "ESSA", "EXCL", "GOTO", "HRUM",
@@ -46,23 +51,15 @@ func processRecommendation(bot *tgbotapi.BotAPI) {
 		"UNTR", "UNVR",
 	}
 
-	type Recommendation struct {
-		Symbol       string
-		Score        float64
-		Status       string
-		DistToMA     float64
-		DeepAnalysis string
-		Sentiment    float64
-	}
-	var results []Recommendation
+	var results []models.Recommendation
 
 	// Ganti pesan loading karena prosesnya sekarang lebih berat
-	sendSimpleMessage(bot, "⏳ Proses sortir LQ45 sedang berlangsung...")
+	utils.SendSimpleMessage(bot, "⏳ Proses sortir LQ45 sedang berlangsung...")
 
 	for _, s := range pool {
-		score, status, distToMA := getStockScore(s) //
+		score, status, distToMA := research.GetStockScore(s) //
 		if score > 0 {
-			results = append(results, Recommendation{
+			results = append(results, models.Recommendation{
 				Symbol:   s,
 				Score:    score,
 				Status:   status,
@@ -89,9 +86,9 @@ func processRecommendation(bot *tgbotapi.BotAPI) {
 	// INTEGRASI DEEP RESEARCH (Hanya untuk yang Hijau / Skor == 10)
 	for i, res := range topCandidates {
 		if res.Score == 10 {
-			news, _ := fetchNewsRSS(res.Symbol)
-			tech := fetchTechnicalData(res.Symbol)
-			analysis, err := getDeepAnalysis(res.Symbol, news, tech)
+			news, _ := research.FetchNewsRSS(res.Symbol)
+			tech := research.FetchTechnicalData(res.Symbol)
+			analysis, err := research.GetDeepAnalysis(res.Symbol, news, tech)
 			
 			if err == nil && analysis != "" {
 				topCandidates[i].DeepAnalysis = analysis
@@ -153,8 +150,7 @@ func processRecommendation(bot *tgbotapi.BotAPI) {
 	}
 
 	if count == 0 {
-		msg := tgbotapi.NewMessage(MyChatID, "Pasar lagi kurang oke, Dzik. Pantau RDPU dulu.") //
-		bot.Send(msg)
+		utils.SendSimpleMessage(bot, "Pasar lagi kurang oke, Dzik. Pantau RDPU dulu.")
 		return
 	}
 
@@ -162,7 +158,7 @@ func processRecommendation(bot *tgbotapi.BotAPI) {
 	btn := tgbotapi.NewInlineKeyboardButtonData("📰 Cek Berita Top 3", dataBerita) //
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(btn)) //
 
-	msg := tgbotapi.NewMessage(MyChatID, sb.String()) //
+	msg := tgbotapi.NewMessage(config.MyChatID, sb.String()) //
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = keyboard
 	bot.Send(msg)
@@ -182,7 +178,7 @@ func processNews(bot *tgbotapi.BotAPI, topStocks []string) {
 
 	sb.WriteString("----------\n_Tips: Cek sentimen pasar dulu!_")
 
-	msg := tgbotapi.NewMessage(MyChatID, sb.String())
+	msg := tgbotapi.NewMessage(config.MyChatID, sb.String())
 	msg.ParseMode = "Markdown"
 	msg.DisableWebPagePreview = true
 	bot.Send(msg)

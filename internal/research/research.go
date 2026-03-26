@@ -1,4 +1,4 @@
-package main
+package research
 
 import (
 	"context"
@@ -13,10 +13,12 @@ import (
 	"github.com/google/generative-ai-go/genai"
 	"github.com/mmcdole/gofeed"
 	"google.golang.org/api/option"
+    "learn-go/internal/config"
+    "learn-go/internal/models"
 )
 
 // Fungsi untuk ambil berita terbaru via RSS Google News (Fundamental)
-func fetchNewsRSS(symbol string) (string, error) {
+func FetchNewsRSS(symbol string) (string, error) {
 	fp := gofeed.NewParser()
 	url := fmt.Sprintf("https://news.google.com/rss/search?q=saham+%s&hl=id-ID&gl=ID&ceid=ID:id", symbol)
 
@@ -35,21 +37,7 @@ func fetchNewsRSS(symbol string) (string, error) {
 	return strings.Join(newsList, "\n"), nil
 }
 
-// Struct untuk memecah JSON dari Yahoo Finance API
-type YahooChart struct {
-	Chart struct {
-		Result []struct {
-			Indicators struct {
-				Quote []struct {
-					Close []float64 `json:"close"`
-					Volume []float64 `json:"volume"`
-				} `json:"quote"`
-			} `json:"indicators"`
-		} `json:"result"`
-	} `json:"chart"`
-}
-
-func fetchTechnicalData(symbol string) string {
+func FetchTechnicalData(symbol string) string {
     // Panggil API Yahoo Chart (1 bulan terakhir, interval harian)
     url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s.JK?interval=1d&range=1mo", symbol)
     req, _ := http.NewRequest("GET", url, nil)
@@ -64,7 +52,7 @@ func fetchTechnicalData(symbol string) string {
 
     body, _ := io.ReadAll(resp.Body)
     // Asumsi struct struct YahooChart sudah disesuaikan
-    var data YahooChart
+    var data models.YahooChartResponse
     json.Unmarshal(body, &data)
 
     if len(data.Chart.Result) == 0 || len(data.Chart.Result[0].Indicators.Quote) == 0 {
@@ -136,11 +124,11 @@ func fetchTechnicalData(symbol string) string {
 }
 
 // Fungsi AI yang sudah di-UPGRADE (Menerima input Teknikal)
-func getDeepAnalysis(symbol string, newsContent string, technicalContent string) (string, error) {
+func GetDeepAnalysis(symbol string, newsContent string, technicalContent string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	client, err := genai.NewClient(ctx, option.WithAPIKey(GeminiAPIKey))
+	client, err := genai.NewClient(ctx, option.WithAPIKey(config.GeminiAPIKey))
 	if err != nil {
 		return "", err
 	}

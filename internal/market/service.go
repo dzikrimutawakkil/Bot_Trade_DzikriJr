@@ -1,4 +1,4 @@
-package main
+package market
 
 import (
 	"encoding/json"
@@ -6,26 +6,10 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"learn-go/internal/models"
 )
 
-// Struktur JSON untuk endpoint /v8/finance/chart
-type YahooChartResponse struct {
-	Chart struct {
-		Result []struct {
-			Meta struct {
-				RegularMarketPrice float64 `json:"regularMarketPrice"`
-				PreviousClose      float64 `json:"previousClose"`
-			} `json:"meta"`
-			Indicators struct {
-				Quote []struct {
-					Close []float64 `json:"close"`
-				} `json:"quote"`
-			} `json:"indicators"`
-		} `json:"result"`
-	} `json:"chart"`
-}
-
-func getLivePrice(symbol string) float64 {
+func GetLivePrice(symbol string) float64 {
 	ticker := symbol
 	if !strings.HasSuffix(symbol, ".JK") && symbol != "AAPL" {
 		ticker = symbol + ".JK"
@@ -53,7 +37,7 @@ func getLivePrice(symbol string) float64 {
 		return 0
 	}
 
-	var data YahooChartResponse
+	var data models.YahooChartResponse
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		log.Printf("❌ Gagal Decode JSON: %v", err)
 		return 0
@@ -81,7 +65,7 @@ func getLivePrice(symbol string) float64 {
 	return 0
 }
 
-func getHistoricalPrices(symbol string) (HistoricalData, error) {
+func GetHistoricalPrices(symbol string) (models.HistoricalData, error) {
 	ticker := symbol
 	if !strings.HasSuffix(symbol, ".JK") { ticker = symbol + ".JK" }
 
@@ -93,17 +77,17 @@ func getHistoricalPrices(symbol string) (HistoricalData, error) {
 	req.Header.Set("User-Agent", "Mozilla/5.0")
 
 	resp, err := client.Do(req)
-	if err != nil { return HistoricalData{}, err }
+	if err != nil { return models.HistoricalData{}, err }
 	defer resp.Body.Close()
 
-	var data YahooChartResponse // Pakai struct yang sudah kita buat sebelumnya
+	var data models.YahooChartResponse // Pakai struct yang sudah kita buat sebelumnya
 	json.NewDecoder(resp.Body).Decode(&data)
 
 	if len(data.Chart.Result) > 0 {
-		return HistoricalData{
+		return models.HistoricalData{
 			Prices: data.Chart.Result[0].Indicators.Quote[0].Close,
 			Symbol: symbol,
 		}, nil
 	}
-	return HistoricalData{}, fmt.Errorf("data kosong")
+	return models.HistoricalData{}, fmt.Errorf("data kosong")
 }

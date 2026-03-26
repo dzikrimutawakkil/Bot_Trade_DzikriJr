@@ -1,4 +1,4 @@
-package main
+package portfolio
 
 import (
 	"fmt"
@@ -6,19 +6,23 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"learn-go/internal/config"
+	"learn-go/internal/storage"
+	"learn-go/internal/utils"
+	"learn-go/internal/market"
 )
 
-func startPriceMonitor(bot *tgbotapi.BotAPI) {
-	ticker := time.NewTicker(CheckPeriod)
+func StartPriceMonitor(bot *tgbotapi.BotAPI) {
+	ticker := time.NewTicker(config.CheckPeriod)
 	log.Println("📡 Monitor harga (Dual-Check) aktif dengan konfigurasi eksternal...")
 
 	for range ticker.C {
-		if !isMarketOpen() {
+		if !utils.IsMarketOpen() {
 			continue
 		}
 
-		for symbol, plan := range myStocks {
-			yahooPrice := getLivePrice(symbol)
+		for symbol, plan := range config.MyStocks {
+			yahooPrice := market.GetLivePrice(symbol)
 			if yahooPrice == 0 {
 				continue
 			}
@@ -27,12 +31,12 @@ func startPriceMonitor(bot *tgbotapi.BotAPI) {
 			yahooPNL := (yahooPrice - plan.EntryPrice) / plan.EntryPrice * 100
 
 			// STEP 1: Gunakan variabel Config untuk Trigger Yahoo
-			isTPTrigger := yahooPNL >= YahooTPTrigger
-			isCLTrigger := yahooPNL <= -YahooCLTrigger // Kita pakai minus karena CL itu turun
+			isTPTrigger := yahooPNL >= config.YahooTPTrigger
+			isCLTrigger := yahooPNL <= -config.YahooCLTrigger // Kita pakai minus karena CL itu turun
 
 			if isTPTrigger || isCLTrigger {
 				// STEP 2: Cross-check Google
-				realPrice := getGooglePrice(symbol)
+				realPrice := market.GetGooglePrice(symbol)
 				if realPrice == 0 {
 					realPrice = yahooPrice
 				}
@@ -43,7 +47,7 @@ func startPriceMonitor(bot *tgbotapi.BotAPI) {
 				conditionMet := false
 				var msg string
 
-				if realPNL >= GoogleTPTarget {
+				if realPNL >= config.GoogleTPTarget {
 					// KONDISI TAKE PROFIT
 					msg = fmt.Sprintf("🚀 **TAKE PROFIT CONFIRMED!**\n\n"+
 						"Emiten: **%s**\n"+
@@ -51,9 +55,9 @@ func startPriceMonitor(bot *tgbotapi.BotAPI) {
 						"Real PNL: `+%.2f%%`\n"+
 						"Harga Google: `%s`\n\n"+
 						"Ketik `/sell %s` jika sudah eksekusi.",
-						symbol, GoogleTPTarget, realPNL, formatRupiah(realPrice), symbol)
+						symbol, config.GoogleTPTarget, realPNL, utils.FormatRupiah(realPrice), symbol)
 					conditionMet = true
-				} else if realPNL <= -GoogleCLTarget {
+				} else if realPNL <= -config.GoogleCLTarget {
 					// KONDISI CUT LOSS
 					msg = fmt.Sprintf("🚨 **CUT LOSS CONFIRMED!**\n\n"+
 						"Emiten: **%s**\n"+
@@ -61,21 +65,21 @@ func startPriceMonitor(bot *tgbotapi.BotAPI) {
 						"Real PNL: `%.2f%%`\n"+
 						"Harga Google: `%s`\n\n"+
 						"Ketik `/sell %s` jika sudah eksekusi.",
-						symbol, GoogleCLTarget, realPNL, formatRupiah(realPrice), symbol)
+						symbol, config.GoogleCLTarget, realPNL, utils.FormatRupiah(realPrice), symbol)
 					conditionMet = true
 				}
 
 				// STEP 4: Kirim Notifikasi
 				if conditionMet {
 					// Gunakan EmergencyDelay dari Config
-					if time.Since(plan.LastNotified) < EmergencyDelay {
+					if time.Since(plan.LastNotified) < config.EmergencyDelay {
 						continue
 					}
 
-					sendMarkdownMessage(bot, msg)
+					utils.SendMarkdownMessage(bot, msg)
 					plan.LastNotified = time.Now()
-					myStocks[symbol] = plan
-					saveData()
+					config.MyStocks[symbol] = plan
+					storage.SaveData()
 				}
 			}
 		}
