@@ -28,7 +28,7 @@ func getPortfolioEvaluation(plan models.TradingPlan, currentPrice float64, newsC
 	defer client.Close()
 
 	// Gunakan versi 1.5-flash yang lebih stabil
-	model := client.GenerativeModel("gemini-1.5-flash")
+	model := client.GenerativeModel("gemini-flash-latest")
 
 	// 1. Hitung Floating PNL
 	floatingPNL := utils.CalculateNetPNL(plan.EntryPrice, currentPrice, config.BuyFee, config.SellFee)

@@ -10,6 +10,7 @@ import (
 	"learn-go/internal/models"
 	"learn-go/internal/config"
 	"learn-go/internal/utils"
+	"math"
 )
 
 func ProcessBuyCommand(bot *tgbotapi.BotAPI, args []string) {
@@ -48,7 +49,12 @@ func ProcessBuyCommand(bot *tgbotapi.BotAPI, args []string) {
 		"_Bot akan otomatis mengawal saham ini! 🚀_",
 		symbol, lots, utils.FormatRupiah(totalModal), 
 		utils.FormatRupiah(plan.TakeProfit), 
-		utils.FormatRupiah(initialTSL), 
+		utils.FormatRupiah(func() float64 {
+			if initialTSL > plan.CutLoss {
+				return initialTSL
+			}
+			return plan.CutLoss
+		}()), // Pastikan TSL awal tidak lebih dalam dari Cut Loss
 		utils.FormatRupiah(plan.CutLoss))
 		
 	utils.SendMarkdownMessage(bot, response)
@@ -98,8 +104,21 @@ func ProcessStatusCommand(bot *tgbotapi.BotAPI) {
 		totalSellValue := googlePrice * (1 - config.SellFee) * float64(plan.Lots) * 100
 		totalPNL := totalSellValue - totalBuyValue
 
-		// 3. Hitung Batas Trailing Stop Saat Ini
-		tslLimit := plan.HighestPrice * (1 - config.TrailingStopPercent)
+		// 3. Hitung Batas Trailing Stop Saat Ini (Diperbarui dengan Logika Anti-Bocor)
+		var tslLimit float64
+		if plan.HighestPrice <= plan.EntryPrice {
+			// Jika saham belum pernah naik (pucuk = harga beli), gunakan Cut Loss awal
+			tslLimit = plan.CutLoss
+		} else {
+			// Jika saham sudah naik, hitung TSL Dinamis
+			kalkulasiTSL := plan.HighestPrice * (1 - config.TrailingStopPercent)
+			
+			// Pastikan TSL dinamis tidak lebih dalam (rendah) dari Cut Loss awal
+			tslLimit = math.Max(kalkulasiTSL, plan.CutLoss)
+		}
+		
+		// Bulatkan agar tidak ada koma (sesuai fraksi IHSG)
+		tslLimit = math.Round(tslLimit)
 
 		trendEmoji := "📈"
 		if totalPNL < 0 {
@@ -119,7 +138,7 @@ func ProcessStatusCommand(bot *tgbotapi.BotAPI) {
 		if totalPNL < 0 {
 			pnlLabel = "Rugi Bersih"
 		}
-		// Gunakan math.Abs supaya tanda minusnya tidak dobel saat format Rupiah
+		
 		sb.WriteString(fmt.Sprintf("   👉 **%s: %s %s**\n\n", pnlLabel, utils.FormatRupiah(totalPNL), trendEmoji))
 	}
 
