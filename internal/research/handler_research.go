@@ -82,9 +82,9 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 	}
 	topCandidates := results[:limit]
 
-	// INTEGRASI DEEP RESEARCH (Hanya untuk yang Hijau / Skor == 10)
+	// INTEGRASI DEEP RESEARCH (Hanya untuk yang Hijau / Skor >= 8)
 	for i, res := range topCandidates {
-		if res.Score == 10 {
+		if res.Score >= 8 {
 			news, _ := FetchNewsRSS(res.Symbol)
 			tech := FetchTechnicalData(res.Symbol)
 			analysis, err := GetDeepAnalysis(res.Symbol, news, tech)
@@ -104,7 +104,7 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 	// SORTING FINAL: Urutkan ulang berdasarkan Sentimen AI
 	sort.Slice(topCandidates, func(i, j int) bool {
 		// Jika keduanya Hijau (Skor 10), sentimen terbesar menang
-		if topCandidates[i].Score == 10 && topCandidates[j].Score == 10 {
+		if topCandidates[i].Score >= 8 && topCandidates[j].Score >= 8 {
 			if topCandidates[i].Sentiment != topCandidates[j].Sentiment {
 				return topCandidates[i].Sentiment > topCandidates[j].Sentiment
 			}
@@ -129,14 +129,14 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 		}
 
 		emoji := "⭐"
-		if res.Score == 10 {
+		if res.Score >= 8 {
 			emoji = "🔥"
 		}
 
 		// Header saham yang minimalis seperti seleramu
 		sb.WriteString(fmt.Sprintf("━━━━━━ %s **%s** %s ━━━━━━\n\n", emoji, res.Symbol, emoji,))
 		
-		if res.Score == 10 && res.DeepAnalysis != "" {
+		if res.Score >= 8 && res.DeepAnalysis != "" {
 			cleanAnalysis := strings.Replace(res.DeepAnalysis, "Hasil Deep Research:", "", 1)
 			cleanAnalysis = strings.Replace(cleanAnalysis, "🔍", "", 1)
 			sb.WriteString(fmt.Sprintf("%s\n\n\n", strings.TrimSpace(cleanAnalysis)))

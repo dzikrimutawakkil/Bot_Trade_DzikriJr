@@ -73,7 +73,7 @@ func GetStockScore(symbol string) (float64, string, float64) {
 
     // 1. 🟢 HIJAU (Kondisi Sempurna untuk Swing Trade)
     // Syarat diperketat: Uptrend menengah (ma20 > ma50) & Momentum kuat (rsiToday > rsiYesterday)
-    if lastPrice > ma20 && ma20 > ma50 && rsiToday > rsiYesterday && rsiToday >= 40 && rsiToday <= 65 {
+    if lastPrice > ma20 && ma20 > ma50 && rsiToday > rsiYesterday && rsiToday >= 40 && rsiToday <= 75 {
         
         // Cek Konfirmasi Volume Bandar
         if lastVol > avgVol {
@@ -93,7 +93,7 @@ func GetStockScore(symbol string) (float64, string, float64) {
         verdict = "🟠 **SIAGA SATU**\nAlasan: Dikit lagi harganya nembus area naik. Pantau ketat, siap-siap tarik dana dari RDPU!"
 
     // 3. 🟡 KUNING (Kepanasan / Overbought)
-    } else if lastPrice > ma20 && rsiToday > 65 {
+    } else if lastPrice > ma20 && rsiToday > 75 {
         score = 5
         verdict = "🟡 **TUNGGU DULU**\nAlasan: Lagi naik kencang, risiko 'kemahalan' tinggi. Tunggu harga turun dikit (koreksi) baru sikat."
 
