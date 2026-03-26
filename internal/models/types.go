@@ -35,6 +35,7 @@ type TradingPlan struct {
 	EntryPrice   float64
 	TakeProfit   float64
 	CutLoss      float64
+	HighestPrice float64
 	Lots         int
 	LastNotified time.Time
 }

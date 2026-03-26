@@ -27,6 +27,7 @@ func ProcessBuyCommand(bot *tgbotapi.BotAPI, args []string) {
 		EntryPrice: entry,
 		TakeProfit: entry * (1 + config.TPPercent),
 		CutLoss:    entry * (1 - config.CLPercent),
+		HighestPrice: entry,
 		Lots:       lots,
 	}
 	config.MyStocks[symbol] = plan
