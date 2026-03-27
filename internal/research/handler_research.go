@@ -42,20 +42,12 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 }
 
 func ProcessRecommendation(bot *tgbotapi.BotAPI) {
-	pool := []string{
-		"ACES", "ADRO", "AKRA", "AMRT", "ANKM", "ASII", "BBCA", "BBNI", "BBRI", "BBTN",
-		"BMRI", "BRIS", "BRPT", "BUKA", "CPIN", "EMTK", "ESSA", "EXCL", "GOTO", "HRUM",
-		"ICBP", "INCO", "INDY", "INKP", "INTP", "ITMG", "KLBF", "MAPI", "MBMA", "MDKA",
-		"MEDC", "MIKA", "PGAS", "PGEO", "PTBA", "SIDO", "SMGR", "SRTG", "TLKM", "TPIA",
-		"UNTR", "UNVR",
-	}
-
 	var results []models.Recommendation
 
 	// Ganti pesan loading karena prosesnya sekarang lebih berat
 	utils.SendSimpleMessage(bot, "⏳ Proses sortir LQ45 sedang berlangsung...")
 
-	for _, s := range pool {
+	for _, s := range config.Watchlist {
 		score, status, distToMA := GetStockScore(s) //
 		if score > 0 {
 			results = append(results, models.Recommendation{
