@@ -62,30 +62,41 @@ func ProcessBuyCommand(bot *tgbotapi.BotAPI, args []string) {
 	utils.SendMarkdownMessage(bot, response)
 }
 
-// Logika /sell dengan fitur Pencatatan Otomatis (Auto-Logger)
+// Logika /sell dengan fitur Pencatatan Otomatis (Auto-Logger) dan Harga Manual
 func ProcessSellCommand(bot *tgbotapi.BotAPI, args []string) {
-	if len(args) != 2 {
-		utils.SendSimpleMessage(bot, "❌ Format salah! Gunakan: `/sell [KODE]`")
+	// Format sekarang wajib pakai harga: /sell [KODE] [HARGA]
+	if len(args) < 3 {
+		utils.SendSimpleMessage(bot, "❌ Format salah! Gunakan: `/sell [KODE] [HARGA]`")
 		return
 	}
 	
 	symbol := strings.ToUpper(args[1])
+	sellPrice, err := strconv.ParseFloat(args[2], 64)
+	if err != nil {
+		utils.SendSimpleMessage(bot, "❌ Harga harus berupa angka!")
+		return
+	}
 	
-	// UBAH: Ambil data 'plan' alih-alih menggunakan '_'
 	if plan, ada := config.MyStocks[symbol]; ada {
 		
-		// 1. Ambil harga jual saat ini (prioritaskan Google, fallback ke Yahoo)
-		sellPrice := market.GetGooglePrice(symbol)
-		if sellPrice == 0 {
-			sellPrice = market.GetLivePrice(symbol)
-		}
-
-		// 2. Hitung persentase cuan/rugi (netPNL)
+		// 1. Hitung persentase cuan/rugi (netPNL) dengan harga manualmu
 		netPNL := utils.CalculateNetPNL(plan.EntryPrice, sellPrice, config.BuyFee, config.SellFee)
+
+		// 2. Hitung Rupiah Bersih (Cash flow sebenarnya di rekening)
+		totalPenjualan := sellPrice * float64(plan.Lots) * 100 * (1 - config.SellFee)
+		totalModal := plan.EntryPrice * float64(plan.Lots) * 100 * (1 + config.BuyFee)
+		rupiahPNL := totalPenjualan - totalModal
+
+		rupiahLabel := "Cuan Bersih"
+		statusEmoji := "🟢"
+		if rupiahPNL < 0 {
+			rupiahLabel = "Rugi Bersih"
+			statusEmoji = "🔴"
+			rupiahPNL = -rupiahPNL // Ubah ke positif untuk keperluan tampilan format Rupiah
+		}
 
 		// 3. Tentukan Catatan (Take Profit / Cut Loss / Manual)
 		catatan := "Manual Sell"
-		// config.TPPercent biasanya bernilai desimal (misal 0.04), netPNL bernilai puluhan (misal 4.0)
 		if netPNL >= config.TPPercent*100 {
 			catatan = "Take Profit"
 		} else if netPNL <= -config.CLPercent*100 {
@@ -99,8 +110,18 @@ func ProcessSellCommand(bot *tgbotapi.BotAPI, args []string) {
 		delete(config.MyStocks, symbol)
 		storage.SaveData()
 		
-		pesan := fmt.Sprintf("✅ Saham **%s** berhasil dijual di harga **%s**.\n📊 PNL Terakhir: **%.2f%%**\n📝 _Tercatat di History._", 
-			symbol, utils.FormatRupiah(sellPrice), netPNL)
+		// 6. Format Pesan Laporan Penjualan
+		pesan := fmt.Sprintf("%s **%s BERHASIL DIJUAL!**\n\n"+
+			"🤝 **Harga Jual:** %s\n"+
+			"🛒 **Lot Terjual:** %d\n"+
+			"📊 **PNL Persentase:** **%.2f%%**\n"+
+			"💰 **%s:** %s\n\n"+
+			"📝 _Tercatat di History sebagai: %s_", 
+			statusEmoji, symbol, 
+			utils.FormatRupiah(sellPrice), plan.Lots, 
+			netPNL, rupiahLabel, utils.FormatRupiah(rupiahPNL), 
+			catatan)
+			
 		utils.SendMarkdownMessage(bot, pesan)
 		
 	} else {
@@ -149,8 +170,10 @@ func ProcessStatusCommand(bot *tgbotapi.BotAPI) {
 			tslLimit = math.Max(kalkulasiTSL, plan.CutLoss)
 		}
 		
-		// Bulatkan agar tidak ada koma (sesuai fraksi IHSG)
+		// 4. PEMBULATAN SEMUA BATAS HARGA (Sesuai Fraksi Pasar)
 		tslLimit = math.Round(tslLimit)
+		takeProfit := math.Round(plan.TakeProfit)
+		cutLoss := math.Round(plan.CutLoss)
 
 		trendEmoji := "📈"
 		if totalPNL < 0 {
@@ -162,13 +185,16 @@ func ProcessStatusCommand(bot *tgbotapi.BotAPI) {
 		sb.WriteString(fmt.Sprintf("   [Y] Now : %s (%.2f%%)\n", utils.FormatRupiah(yahooPrice), perfYahoo))
 		sb.WriteString(fmt.Sprintf("   %s Now : %s (%.2f%%)\n", sourceMarker, utils.FormatRupiah(googlePrice), perfGoogle))
 		
-		// Info Pucuk & TSL (Sangat penting buat Swing Trader!)
+		// Info Pucuk, TP, CL & TSL yang sudah dibulatkan
 		sb.WriteString(fmt.Sprintf("   🏔️ Pucuk : %s\n", utils.FormatRupiah(plan.HighestPrice)))
+		sb.WriteString(fmt.Sprintf("   🎯 TP    : %s\n", utils.FormatRupiah(takeProfit)))
+		sb.WriteString(fmt.Sprintf("   🩸 CL    : %s\n", utils.FormatRupiah(cutLoss)))
 		sb.WriteString(fmt.Sprintf("   🛡️ TSL   : %s\n", utils.FormatRupiah(tslLimit)))
 
 		pnlLabel := "Cuan Bersih"
 		if totalPNL < 0 {
 			pnlLabel = "Rugi Bersih"
+			totalPNL = -totalPNL // Ubah ke positif untuk format Rupiah
 		}
 		
 		sb.WriteString(fmt.Sprintf("   👉 **%s: %s %s**\n\n", pnlLabel, utils.FormatRupiah(totalPNL), trendEmoji))
