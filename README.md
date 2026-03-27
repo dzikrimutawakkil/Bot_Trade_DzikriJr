@@ -1,50 +1,169 @@
-# 🚀 DzikriJrBot: Wealth Management Assistant
+# 🤖 Bot Trade DzikriJr (AI Fast Swing Assistant)
 
-Bot Telegram berbasis **Go** untuk otomasi *screening* saham LQ45 dan monitoring portofolio secara *real-time*. Dirancang untuk efisiensi eksekusi bagi *swing trader*.
+**DzikriJr** adalah bot Telegram asisten *trading saham cerdas* yang dibangun menggunakan **Golang** dan ditenagai oleh **Google Gemini AI**.
 
+Bot ini dirancang dengan arsitektur **Clean Code (Domain-Driven Design)** untuk mengeksekusi strategi **Fast Swing Trading (1–5 hari)** di Bursa Efek Indonesia (IHSG).
 
-## 🛠 Core Features
+Selain memberikan rekomendasi teknikal, bot ini juga berperan sebagai **manajer portofolio pribadi** yang membantu menjaga psikologis trader melalui:
+- ⚠️ Early Warning System  
+- 📊 Auto Journaling  
+- 📈 Monitoring portofolio real-time  
 
-* **Automatic Hunter:** Scan 42 saham LQ45 setiap jam 08:45 WIB.
-* **Smart Scoring:** Analisis teknikal menggunakan kombinasi **MA20** dan **RSI**.
-* **Aggressive Sorting:** Mengurutkan rekomendasi berdasarkan kedekatan harga dengan garis MA20 (*buy on rebound*).
-* **Portfolio Guard:** Monitoring *Take Profit* (**7.5%**) dan *Stop Loss* (**2.5%**) otomatis.
-* **Direct Intel:** Link berita emiten (Stockbit & Google News) langsung di dalam bot.
+---
 
+## 🌟 Fitur Unggulan
 
-## 📈 Strategy Logic
+### 🧠 AI-Powered Deep Research
+Menggabungkan:
+- Analisis fundamental (sentimen berita dari Google News RSS)
+- Indikator teknikal (MA5, MA20, RSI, Volume)
 
-Bot bekerja dengan prinsip **Trend Following + Momentum**:
+Semua disintesis oleh **Gemini AI** untuk menghasilkan sinyal **BUY / SELL** yang lebih rasional.
 
-* **Trend:** Harga > MA20.
-* **Momentum:** RSI di area 40-60.
-* **Risk-to-Reward:** 1:3 (Menjaga akun tetap tumbuh meski *win rate* 50%).
+---
 
+### 🛡️ Early Warning System (EWS) & Trailing Stop
+- Monitoring harga otomatis di background
+- Notifikasi Telegram jika:
+  - ✅ Target Take Profit tercapai  
+  - ❌ Menyentuh Trailing Stop / Cut Loss  
 
-## 💻 Setup & Run
+---
 
-1. Isi `MyChatID` dan `BotToken` di `config.go`.
-2. Jalankan aplikasi:
+### 📊 Auto-Journaling (CSV Logger)
+Setiap transaksi:
+- `/buy` dan `/sell`
+- Dicatat otomatis ke `trade_history.csv`
+
+Isi data:
+- Harga beli & jual
+- PNL (%)
+- Alasan jual
+
+➡️ Cocok untuk evaluasi bulanan (*trading journal*)
+
+---
+
+### ⏰ Smart Briefing (Cron Jobs)
+Bot akan otomatis kirim:
+- 🕘 08:45 WIB → sebelum market buka  
+- 🕛 12:00 WIB → saat jam istirahat  
+
+Tujuan:
+- Evaluasi posisi
+- Menghindari **Noon Trap**
+
+---
+
+### 📡 Dual Data Source
+- 📊 Yahoo Finance → data historis
+- ⚡ Google Finance → harga real-time (scraping)
+
+---
+
+## 🏗️ Arsitektur Proyek (Feature-Based)
+
+Struktur modular untuk scalability & maintainability:
+
 ```bash
-go run .
+Bot_Trade_DzikriJr/
+├── cmd/
+│   └── bot/
+│       └── main.go          # Entry point + inisialisasi bot & cron
+├── internal/
+│   ├── config/              # Config global (API key, watchlist, TP/CL)
+│   ├── market/              # Integrasi Yahoo Finance & scraping Google Finance
+│   ├── models/              # Struct (TradingPlan, History, dll)
+│   ├── portfolio/           # Logic PNL, EWS, trailing stop
+│   ├── research/            # AI prompt, indikator teknikal, news scraping
+│   ├── storage/             # JSON storage & CSV logger
+│   └── telegram/            # Handler & routing command Telegram
 
+
+## 📈 Strategi Trading: Fast Swing (Sniper Mode)
+
+Strategi agresif namun tetap terkontrol:
+
+| Parameter | Value |
+|----------|------|
+| ⏱️ Durasi | 1 – 5 hari |
+| 🎯 Take Profit | +3% hingga +5% |
+| 🛑 Cut Loss | -2% |
+| 📊 Indikator | MA5, MA20, RSI, Volume |
+
+**Setup utama:**
+- Harga di atas MA5
+- Volume meningkat (indikasi akumulasi)
+
+---
+
+## 💬 Command Telegram
+
+| Command | Contoh | Deskripsi |
+|--------|--------|----------|
+| `/research` | `/research ADRO` | Analisis saham (AI + teknikal + fundamental) |
+| `/buy` | `/buy MIKA 2120 3` | Tambah saham ke portofolio |
+| `/sell` | `/sell MIKA` | Jual saham + hitung PNL + logging |
+| `/status` | `/status` | Lihat ringkasan portofolio |
+
+---
+
+
+## 🚀 Cara Menjalankan
+
+### 1. Clone Repository
+```bash
+git clone https://github.com/username/Bot_Trade_DzikriJr.git
+cd Bot_Trade_DzikriJr
 ```
 
-## 📈 Supported Stocks (LQ45 Pool)
-Bot ini memantau 42 emiten paling likuid di IHSG:
-> ACES, ADRO, AKRA, AMRT, ANKM, ASII, BBCA, BBNI, BBRI, BBTN, BMRI, BRIS, BRPT, BUKA, CPIN, EMTK, ESSA, EXCL, GOTO, HRUM, ICBP, INCO, INDY, INKP, INTP, ITMG, KLBF, MAPI, MBMA, MDKA, MEDC, MIKA, PGAS, PGEO, PTBA, SIDO, SMGR, SRTG, TLKM, TPIA, UNTR, UNVR.
+---
 
+### 2. Konfigurasi API Key
 
-## ⌨️ Command List
+Edit file:
 
-* `/recommend` - Cari 3 saham terbaik saat ini.
-* `/buy [KODE] [HARGA] [LOT]` - Daftarkan saham ke pantauan "Satpam".
-* `/status` - Cek *real-time* profit/loss portofolio.
-* `/sell [KODE]` - Berhenti memantau saham tertentu.
-* `/reset` - Bersihkan semua data pantauan.
+`internal/config/utils.go`
+
+atau gunakan `.env`
+
+Isi:
+
+```env
+BOT_TOKEN=your_telegram_bot_token
+GEMINI_API_KEY=your_gemini_api_key
+MY_CHAT_ID=your_telegram_chat_id
+```
 
 ---
 
-*Built for personal wealth automation.*
+### 3. Install Dependency
+```bash
+go mod tidy
+```
 
 ---
+
+### 4. Jalankan Bot
+```bash
+go run cmd/bot/main.go
+```
+
+---
+
+## ⚠️ Disclaimer
+
+Bot ini hanyalah **tools bantu analisis**, bukan financial advisor.
+
+Semua keputusan trading:
+> sepenuhnya tanggung jawab pengguna.
+
+Trading saham memiliki risiko tinggi, terutama untuk strategi jangka pendek.
+
+Gunakan **risk management** yang baik.
+
+---
+
+## 💡 Quote
+
+> *"Cut your losses short and let your profits run."*
