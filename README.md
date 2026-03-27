@@ -79,7 +79,7 @@ Bot_Trade_DzikriJr/
 │   ├── storage/             # JSON storage & CSV logger
 │   └── telegram/            # Handler & routing command Telegram
 
-
+```
 ## 📈 Strategi Trading: Fast Swing (Sniper Mode)
 
 Strategi agresif namun tetap terkontrol:
