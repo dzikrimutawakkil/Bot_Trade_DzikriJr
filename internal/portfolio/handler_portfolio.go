@@ -37,6 +37,8 @@ func ProcessBuyCommand(bot *tgbotapi.BotAPI, args []string) {
 	config.MyStocks[symbol] = plan
 	storage.SaveData()
 
+	storage.LogTrade("BUY", symbol, entry, lots, 0.0, "Entry awal")
+
 	// Hitung modal asli yang terpotong di RDN (termasuk Fee Beli Bibit 0.15%)
 	totalModal := entry * float64(lots) * 100 * (1 + config.BuyFee)
 
@@ -60,19 +62,49 @@ func ProcessBuyCommand(bot *tgbotapi.BotAPI, args []string) {
 	utils.SendMarkdownMessage(bot, response)
 }
 
-// Logika /sell yang tadinya numpuk di dalam loop, sekarang punya fungsi sendiri
+// Logika /sell dengan fitur Pencatatan Otomatis (Auto-Logger)
 func ProcessSellCommand(bot *tgbotapi.BotAPI, args []string) {
 	if len(args) != 2 {
 		utils.SendSimpleMessage(bot, "❌ Format salah! Gunakan: `/sell [KODE]`")
 		return
 	}
+	
 	symbol := strings.ToUpper(args[1])
-	if _, ada := config.MyStocks[symbol]; ada {
+	
+	// UBAH: Ambil data 'plan' alih-alih menggunakan '_'
+	if plan, ada := config.MyStocks[symbol]; ada {
+		
+		// 1. Ambil harga jual saat ini (prioritaskan Google, fallback ke Yahoo)
+		sellPrice := market.GetGooglePrice(symbol)
+		if sellPrice == 0 {
+			sellPrice = market.GetLivePrice(symbol)
+		}
+
+		// 2. Hitung persentase cuan/rugi (netPNL)
+		netPNL := utils.CalculateNetPNL(plan.EntryPrice, sellPrice, config.BuyFee, config.SellFee)
+
+		// 3. Tentukan Catatan (Take Profit / Cut Loss / Manual)
+		catatan := "Manual Sell"
+		// config.TPPercent biasanya bernilai desimal (misal 0.04), netPNL bernilai puluhan (misal 4.0)
+		if netPNL >= config.TPPercent*100 {
+			catatan = "Take Profit"
+		} else if netPNL <= -config.CLPercent*100 {
+			catatan = "Cut Loss"
+		}
+
+		// 4. Catat ke dalam CSV sebelum datanya dihapus
+		storage.LogTrade("SELL", symbol, sellPrice, plan.Lots, netPNL, catatan)
+
+		// 5. Hapus pantauan portofolio dan simpan
 		delete(config.MyStocks, symbol)
 		storage.SaveData()
-		utils.SendSimpleMessage(bot, fmt.Sprintf("✅ Pantauan %s dihentikan.", symbol))
+		
+		pesan := fmt.Sprintf("✅ Saham **%s** berhasil dijual di harga **%s**.\n📊 PNL Terakhir: **%.2f%%**\n📝 _Tercatat di History._", 
+			symbol, utils.FormatRupiah(sellPrice), netPNL)
+		utils.SendMarkdownMessage(bot, pesan)
+		
 	} else {
-		utils.SendSimpleMessage(bot, "❌ Saham tidak ditemukan.")
+		utils.SendSimpleMessage(bot, "❌ Saham tidak ditemukan di portofolio.")
 	}
 }
 
