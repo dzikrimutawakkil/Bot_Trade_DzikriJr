@@ -89,6 +89,13 @@ func FetchTechnicalData(symbol string) string {
     ma20 := sumPrice / 20.0
     currentPrice := validCloses[len(validCloses)-1]
 
+    last5Price := validCloses[len(validCloses)-5:]
+    var sum5Price float64
+    for _, val := range last5Price {
+        sum5Price += val
+    }
+    ma5 := sum5Price / 5.0
+
     statusMA := "DI BAWAH MA20 (Downtrend/Lemah)"
     if currentPrice > ma20 {
         statusMA = "DI ATAS MA20 (Uptrend/Kuat)"
@@ -118,8 +125,8 @@ func FetchTechnicalData(symbol string) string {
         trendStr = append(trendStr, fmt.Sprintf("%.0f", val))
     }
 
-    report := fmt.Sprintf("Harga Terakhir: Rp %.0f\nMA20: Rp %.0f\nStatus Teknikal: %s\nStatus Volume: %s\nHarga 5 Hari Terakhir: %s",
-        currentPrice, ma20, statusMA, statusVolume, strings.Join(trendStr, " -> "))
+    report := fmt.Sprintf("Harga Terakhir: Rp %.0f\nMA5 (Momentum Mingguan): Rp %.0f\nMA20 (Tren Menengah): Rp %.0f\nStatus Teknikal: %s\nStatus Volume: %s\nHarga 5 Hari Terakhir: %s",
+        currentPrice, ma5, ma20, statusMA, statusVolume, strings.Join(trendStr, " -> "))
 
     return report
 }
@@ -141,32 +148,32 @@ func GetDeepAnalysis(symbol string, newsContent string, technicalContent string)
 	// Prompt yang jauh lebih canggih & tajam
 	// Prompt yang sudah di-UPGRADE untuk tampilan Telegram yang cantik
 	prompt := fmt.Sprintf(`
-		Bertindaklah sebagai Analis Saham Profesional khusus **Swing Trading (Hold 1-3 Minggu)**.
-		Analisis saham %s berdasarkan data berikut:
+        Bertindaklah sebagai Analis Saham Profesional khusus **FAST SWING (Hold 1-5 Hari)**.
+        Analisis saham %s berdasarkan data berikut:
 
-		[DATA FUNDAMENTAL & SENTIMEN BERITA]
-		%s
+        [DATA FUNDAMENTAL & SENTIMEN BERITA]
+        %s
 
-		[DATA TEKNIKAL]
-		%s
+        [DATA TEKNIKAL]
+        %s
 
-		WAJIB gunakan format persis seperti di bawah ini. Gunakan pemformatan Markdown:
+        WAJIB gunakan format persis seperti di bawah ini. Gunakan pemformatan Markdown:
 
-		🎯 **Skor Sentimen:** [Angka 1-10]/10
-		📊 **Tren Teknikal:** [Bullish / Bearish / Sideways] (Berikan emoji 📈/📉/↔️)
-		🌊 **Volume:** [Tuliskan apakah akumulasi kuat atau sepi]
-		🔑 **Kata Kunci:** [3-5 kata kunci]
+        🎯 **Skor Sentimen:** [Angka 1-10]/10
+        📊 **Tren Teknikal:** [Bullish / Bearish / Sideways] (Berikan emoji 📈/📉/↔️)
+        🌊 **Volume:** [Tuliskan apakah akumulasi kuat atau sepi]
+        🔑 **Kata Kunci:** [3-5 kata kunci]
 
-		📝 **Kesimpulan Analisis:**
-		[Tulis 2-3 kalimat padat. Jangan buat satu paragraf panjang yang sumpek, gunakan enter/baris baru jika perlu agar nyaman dibaca.]
+        📝 **Kesimpulan Analisis:**
+        [Tulis 2-3 kalimat padat. Fokus pada momentum jangka pendek dan konfirmasi volume.]
 
-		[PILIH HANYA SALAH SATU FORMAT REKOMENDASI DI BAWAH INI SESUAI KESIMPULANMU:]
-		🟢 **REKOMENDASI: BELI**
-		🟡 **REKOMENDASI: TAHAN**
-		🔴 **REKOMENDASI: JUAL**
+        [PILIH HANYA SALAH SATU FORMAT REKOMENDASI DI BAWAH INI SESUAI KESIMPULANMU:]
+        🟢 **REKOMENDASI: BELI**
+        🟡 **REKOMENDASI: TAHAN**
+        🔴 **REKOMENDASI: JUAL**
 
-		_Alasan: [Satu kalimat solid yang menjelaskan alasan spesifik dari rekomendasi di atas untuk jangka waktu 1-3 minggu ke depan.]_
-		`, symbol, newsContent, technicalContent)
+        _Alasan: [Satu kalimat solid yang menjelaskan alasan rekomendasi untuk trading CEPAT dalam 1-5 hari ke depan.]_
+    `, symbol, newsContent, technicalContent)
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {

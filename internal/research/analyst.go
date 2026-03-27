@@ -46,13 +46,13 @@ func GetStockScore(symbol string) (float64, string, float64) {
         }
     }
     
-    // Ubah minimal data jadi 50 hari karena kita butuh MA50
-    if len(cleanPrices) < 50 { return -1, "Data kurang", -1 }
+    // Ubah minimal data jadi 20 hari karena kita butuh MA20
+    if len(cleanPrices) < 20 { return -1, "Data kurang", -1 }
 
     // --- KALKULASI INDIKATOR ---
     lastPrice := cleanPrices[len(cleanPrices)-1]
     ma20 := calculateMA(cleanPrices, 20)
-    ma50 := calculateMA(cleanPrices, 50) // [UPDATE 2]: Filter trend menengah (Swing)
+    ma5 := calculateMA(cleanPrices, 5) // [UPDATE 2]: Filter trend menengah (Swing)
     
     lastVol := cleanVolumes[len(cleanVolumes)-1]
     avgVol := calculateMA(cleanVolumes, 20) // [UPDATE 3]: Rata-rata volume 20 hari
@@ -73,12 +73,12 @@ func GetStockScore(symbol string) (float64, string, float64) {
 
     // 1. 🟢 HIJAU (Kondisi Sempurna untuk Swing Trade)
     // Syarat diperketat: Uptrend menengah (ma20 > ma50) & Momentum kuat (rsiToday > rsiYesterday)
-    if lastPrice > ma20 && ma20 > ma50 && rsiToday > rsiYesterday && rsiToday >= 40 && rsiToday <= 75 {
+    if lastPrice > ma5 && ma5 > ma20 && rsiToday > rsiYesterday && rsiToday >= 40 && rsiToday <= 75 {
         
         // Cek Konfirmasi Volume Bandar
         if lastVol > avgVol {
             score = 10
-            verdict = fmt.Sprintf("🟢 **BELI SEKARANG**\n   🎯 Target: %s (+%.1f%%)\n   🕒 Estimasi: 14-30 hari\n   💡 Alasan: Uptrend aman (MA20>MA50), RSI menanjak, dan didukung Volume Akumulasi besar.", 
+            verdict = fmt.Sprintf("🟢 **BELI SEKARANG (FAST SWING)**\n   🎯 Target: %s (+%.1f%%)\n   🕒 Estimasi: 2-5 hari\n   💡 Alasan: Momentum jangka pendek kuat (Harga di atas MA5) dan diakumulasi volume.", 
                 utils.FormatRupiah(targetPrice), potentialGain)
         } else {
             // Jika teknikal bagus tapi volume sepi, kasih peringatan

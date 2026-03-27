@@ -33,6 +33,10 @@ func main() {
 		portfolio.ProcessPortfolioEvaluation(bot)
 	})
 
+	c.AddFunc("30 12 * * 1-5", func() {
+		portfolio.ProcessPortfolioEvaluation(bot) // Noon Briefing
+	})
+
 	c.AddFunc("30 16 * * 5", func() {
 		research.ProcessRecommendation(bot) // Laporan Jumat sore
 	})

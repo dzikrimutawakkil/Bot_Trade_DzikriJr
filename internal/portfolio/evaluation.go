@@ -37,8 +37,8 @@ func getPortfolioEvaluation(plan models.TradingPlan, currentPrice float64, newsC
 	tslLimit := plan.HighestPrice * (1 - config.TrailingStopPercent)
 
 	prompt := fmt.Sprintf(`
-		Bertindaklah sebagai Manajer Portofolio Saham Profesional dengan spesialisasi strategi SWING TRADING (target hold 1-3 minggu).
-		Evaluasi posisi saham %s yang sedang saya pegang saat ini dari kacamata seorang Swing Trader.
+		Bertindaklah sebagai Manajer Portofolio Saham Profesional dengan spesialisasi strategi FAST SWING TRADING (target hold 1-5 hari kerja).
+		Evaluasi posisi saham %s yang sedang saya pegang saat ini dari kacamata seorang Fast Swing Trader.
 
 		[STATUS POSISI SAYA]
 		- Harga Beli (Avg): Rp %.0f
@@ -53,7 +53,7 @@ func getPortfolioEvaluation(plan models.TradingPlan, currentPrice float64, newsC
 		[DATA TEKNIKAL]
 		%s
 
-		Sebagai Swing Trader, fokuslah pada momentum jangka pendek-menengah. Evaluasi apakah saham ini masih punya "bensin" untuk lanjut naik, atau trennya sudah mulai patah sehingga lebih baik mengamankan profit/cut loss sekarang sebelum menyentuh batas Trailing Stop.
+		Sebagai Fast Swing Trader, fokuslah pada momentum JANGKA SANGAT PENDEK. Evaluasi apakah saham ini masih punya "bensin" untuk lanjut naik besok, atau momentumnya sudah hilang sehingga lebih baik bungkus profit/cut loss HARI INI JUGA sebelum menyentuh batas Trailing Stop.
 
 		WAJIB gunakan format persis seperti di bawah ini dengan Markdown:
 
@@ -63,7 +63,7 @@ func getPortfolioEvaluation(plan models.TradingPlan, currentPrice float64, newsC
 		🎯 **Potensi Lanjut Naik:** [Tinggi / Sedang / Rendah]
 
 		📝 **Saran Strategi:**
-		[Berikan 2-3 kalimat tajam ala Swing Trader. Evaluasi posisi harga saat ini terhadap batas TSL (Rp %.0f) dan MA20. Beritahu apakah lebih baik biarkan harga berlari (let your profit run) atau amankan cuan sekarang karena indikasi overbought/distribusi.]
+		[Berikan 2-3 kalimat tajam ala Fast Swing Trader. Evaluasi posisi harga saat ini terhadap batas TSL (Rp %.0f) dan MA5 (Momentum Harga Mingguan). Beritahu apakah lebih baik bungkus cuan sekarang atau tahan maksimal 1-2 hari lagi.]
 	`, 
 		plan.Symbol, plan.EntryPrice, currentPrice, floatingPNL, plan.HighestPrice, tslLimit, plan.TakeProfit, 
 		newsContent, technicalContent, 

@@ -74,7 +74,7 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 
 				if realPNL >= config.GoogleTPTarget {
 					// KONDISI 1: TAKE PROFIT (Harga Tembus Target Atas)
-					msg = fmt.Sprintf("🚀 **TAKE PROFIT CONFIRMED!**\n\n"+
+					msg = fmt.Sprintf("🎯 **TAKE PROFIT CONFIRMED!**\n\n"+
 						"Emiten: **%s**\n"+
 						"Target: `+%.1f%%`\n"+
 						"Real PNL: `+%.2f%%`\n"+
@@ -85,14 +85,13 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 
 				} else if realTslTriggered {
 					// KONDISI 2: TRAILING STOP (Sabuk Pengaman Tersentuh)
-					// Prioritaskan TSL daripada CL biasa karena TSL mengunci profit di pucuk
 					securedPNL := ((tslPrice - plan.EntryPrice) / plan.EntryPrice) * 100
-					statusEmoji := "💸" // Profit Diamankan
+					statusEmoji := "✅" // Profit Diamankan
 					if securedPNL < 0 {
-						statusEmoji = "🩸" // Rugi Dibatasi
+						statusEmoji = "⚠️" // Rugi Dibatasi
 					}
 
-					msg = fmt.Sprintf("🚨 **TRAILING STOP TERSENTUH!** %s\n\n"+
+					msg = fmt.Sprintf("🛡️ **TRAILING STOP TERSENTUH!** %s\n\n"+
 						"Emiten: **%s**\n"+
 						"Puncak Tertinggi: `%s`\n"+
 						"Batas Sabuk (TSL): `%s`\n"+
@@ -103,7 +102,7 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 					conditionMet = true
 
 				} else if realPNL <= -config.GoogleCLTarget {
-					// KONDISI 3: CUT LOSS STATIS (Sebagai cadangan kalau TSL belum sempat naik)
+					// KONDISI 3: CUT LOSS STATIS
 					msg = fmt.Sprintf("🚨 **CUT LOSS CONFIRMED!**\n\n"+
 						"Emiten: **%s**\n"+
 						"Batas: `-%.1f%%`\n"+
