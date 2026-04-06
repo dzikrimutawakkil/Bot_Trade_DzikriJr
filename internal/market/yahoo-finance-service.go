@@ -11,11 +11,10 @@ import (
 
 func GetLivePrice(symbol string) float64 {
 	ticker := symbol
-	if !strings.HasSuffix(symbol, ".JK") && symbol != "AAPL" {
+	if !strings.HasSuffix(symbol, ".JK") && symbol != "AAPL" && !strings.HasPrefix(symbol, "^") {
 		ticker = symbol + ".JK"
 	}
 
-	// Menggunakan endpoint /v8/finance/chart (Lebih stabil)
 	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1m&range=1d", ticker)
 
 	client := &http.Client{}
@@ -67,9 +66,10 @@ func GetLivePrice(symbol string) float64 {
 
 func GetHistoricalPrices(symbol string) (models.HistoricalData, error) {
 	ticker := symbol
-	if !strings.HasSuffix(symbol, ".JK") { ticker = symbol + ".JK" }
+	if !strings.HasSuffix(symbol, ".JK") && !strings.HasPrefix(symbol, "^") { 
+		ticker = symbol + ".JK" 
+	}
 
-	// Ambil data 3 bulan (range=3mo) dengan interval harian (interval=1d)
 	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?range=3mo&interval=1d", ticker)
 
 	client := &http.Client{}

@@ -3,7 +3,6 @@ package research
 import (
 	"fmt"
     "learn-go/internal/market"
-    "learn-go/internal/config"
     "learn-go/internal/utils"
 )
 
@@ -31,77 +30,110 @@ func calculateRSI(prices []float64) float64 {
 	return 100 - (100 / (1 + rs))
 }
 
-func GetStockScore(symbol string) (float64, string, float64) {
-    data, err := market.GetHistoricalPrices(symbol)
-    if err != nil { return -1, "", -1 }
+func GetStockScore(symbol string) (float64, string, float64, float64) {
+	data, err := market.GetHistoricalPrices(symbol)
+	if err != nil { return -1, "", -1, 0}
 
-    // [UPDATE 1]: Membersihkan Price dan Volume secara bersamaan agar index-nya sinkron
-    var cleanPrices []float64
-    var cleanVolumes []float64
-    for i, p := range data.Prices {
-        // Pastikan harga valid dan data volume tersedia di index yang sama
-        if p > 0 && i < len(data.Volumes) && data.Volumes[i] > 0 { 
-            cleanPrices = append(cleanPrices, p)
-            cleanVolumes = append(cleanVolumes, data.Volumes[i])
-        }
-    }
-    
-    // Ubah minimal data jadi 20 hari karena kita butuh MA20
-    if len(cleanPrices) < 20 { return -1, "Data kurang", -1 }
+	var cleanPrices []float64
+	var cleanVolumes []float64
+	for i, p := range data.Prices {
+		if p > 0 && i < len(data.Volumes) && data.Volumes[i] > 0 { 
+			cleanPrices = append(cleanPrices, p)
+			cleanVolumes = append(cleanVolumes, data.Volumes[i])
+		}
+	}
+	
+	if len(cleanPrices) < 20 { return -1, "Data kurang", -1, 0 }
 
-    // --- KALKULASI INDIKATOR ---
-    lastPrice := cleanPrices[len(cleanPrices)-1]
-    ma20 := calculateMA(cleanPrices, 20)
-    ma5 := calculateMA(cleanPrices, 5) // [UPDATE 2]: Filter trend menengah (Swing)
-    
-    lastVol := cleanVolumes[len(cleanVolumes)-1]
-    avgVol := calculateMA(cleanVolumes, 20) // [UPDATE 3]: Rata-rata volume 20 hari
-    
-    rsiToday := calculateRSI(cleanPrices)
-    rsiYesterday := calculateRSI(cleanPrices[:len(cleanPrices)-1]) // [UPDATE 4]: Momentum naik
+	// --- KALKULASI INDIKATOR ---
+	lastPrice := cleanPrices[len(cleanPrices)-1]
+	ma20 := calculateMA(cleanPrices, 20)
+	ma5 := calculateMA(cleanPrices, 5)
+	
+	lastVol := cleanVolumes[len(cleanVolumes)-1]
+	avgVol := calculateMA(cleanVolumes, 20)
+	
+	// RSI masih bisa dipakai sekadar untuk filter tambahan
+	rsiToday := calculateRSI(cleanPrices)
 
-    // Hitung jarak harga ke MA20 dalam persen
-    distToMA := ((lastPrice - ma20) / ma20) * 100
+	// Hitung jarak harga ke MA20 dalam persen (Sangat Krusial untuk BoW)
+	distToMA := ((lastPrice - ma20) / ma20) * 100
 
-    score := 0.0
-    verdict := ""
-    
-    targetPrice := lastPrice * (1 + config.TPPercent)
-    potentialGain := config.TPPercent * 100
+	score := 0.0
+	verdict := ""
 
-    // --- LOGIKA SKORING ---
+	// --- LOGIKA SKORING BUY ON WEAKNESS (BoW) ---
 
-    // 1. 🟢 HIJAU (Kondisi Sempurna untuk Swing Trade)
-    // Syarat diperketat: Uptrend menengah (ma20 > ma50) & Momentum kuat (rsiToday > rsiYesterday)
-    if lastPrice > ma5 && ma5 > ma20 && rsiToday > rsiYesterday && rsiToday >= 40 && rsiToday <= 75 {
-        
-        // Cek Konfirmasi Volume Bandar
-        if lastVol > avgVol {
-            score = 10
-            verdict = fmt.Sprintf("🟢 **BELI SEKARANG (FAST SWING)**\n   🎯 Target: %s (+%.1f%%)\n   🕒 Estimasi: 2-5 hari\n   💡 Alasan: Momentum jangka pendek kuat (Harga di atas MA5) dan diakumulasi volume.", 
-                utils.FormatRupiah(targetPrice), potentialGain)
-        } else {
-            // Jika teknikal bagus tapi volume sepi, kasih peringatan
-            score = 7 
-            verdict = "🟡 **NAIK TAPI SEPI**\nAlasan: Secara harga bagus, tapi volume transaksi di bawah rata-rata. Rawan false breakout/bantingan."
-        }
+	// 1. 🟢 HIJAU SANGAT KUAT (Golden Setup BoW)
+	// Syarat: Harga di atas MA20 (Masih Uptrend Utama), tapi sedang koreksi di bawah MA5, 
+	// jarak ke MA20 sangat dekat (0% s/d 3%), DAN Volume Kering (Seller habis).
+	if lastPrice >= ma20 && lastPrice < ma5 && distToMA <= 3.0 && lastVol < avgVol {
+		score = 10
+		verdict = "🟢 **SETUP BUY ON WEAKNESS (GOLDEN)**\nAlasan: Harga sedang koreksi mendekati Support MA20 dengan volume kering (Tekanan jual ritel sudah habis). Ini adalah area beli risiko rendah."
+	
+	// 2. 🟠 SIAGA (Hampir Menyentuh Support / Koreksi dengan Volume Normal)
+	// Syarat: Harga masih di atas MA20, jarak < 5%, tapi volume belum benar-benar kering.
+	} else if lastPrice >= ma20 && lastPrice < ma5 && distToMA <= 5.0 {
+		score = 8
+		verdict = "🟠 **SIAGA PANTULAN (BoW)**\nAlasan: Harga sedang turun mendekati Support MA20. Pantau ketat, siap-siap entry jika besok muncul pantulan."
 
-    // 2. 🟠 SIAGA (Mendekati Hijau)
-    // Logika: Harga dikit lagi nembus MA20 (selisih < 2%) DAN RSI mulai masuk area wajar
-    } else if lastPrice < ma20 && lastPrice >= (ma20 * 0.98) && rsiToday >= 38 {
-        score = 8 // Skor tinggi supaya muncul di urutan atas setelah hijau
-        verdict = "🟠 **SIAGA SATU**\nAlasan: Dikit lagi harganya nembus area naik. Pantau ketat, siap-siap tarik dana dari RDPU!"
+	// 3. 🟡 RAWAN PUCUK / KEMAHALAN (Mantan Setup Breakout)
+	// Syarat: Harga terbang jauh di atas MA20 (> 5%) atau RSI sudah kepanasan.
+	} else if distToMA > 5.0 || rsiToday > 70 {
+		score = 4 // Skor kita turunkan drastis agar tidak direkomendasikan AI
+		verdict = "🟡 **RAWAN PUCUK / FOMO**\nAlasan: Harga sudah terbang terlalu jauh dari Support MA20. Berisiko besar terkena bantingan (Take Profit bandar). Jangan dikejar!"
 
-    // 3. 🟡 KUNING (Kepanasan / Overbought)
-    } else if lastPrice > ma20 && rsiToday > 75 {
-        score = 5
-        verdict = "🟡 **TUNGGU DULU**\nAlasan: Lagi naik kencang, risiko 'kemahalan' tinggi. Tunggu harga turun dikit (koreksi) baru sikat."
+	// 4. 🔴 PISAU JATUH (Downtrend Parah)
+	// Syarat: Harga tembus ke bawah MA20 (Support jebol).
+	} else if lastPrice < ma20 {
+		score = 1
+		verdict = "🔴 **PISAU JATUH (DOWNTREND)**\nAlasan: Harga sudah jebol ke bawah MA20. Tren utama rusak. Hindari saham ini sampai dia bisa naik lagi ke atas MA20."
+	
+	// 5. Kondisi Sideways / Tanggung
+	} else {
+		score = 5
+		verdict = "⚪ **TANGGUNG / SIDEWAYS**\nAlasan: Harga nanggung, tidak dekat support dan tidak terlalu pucuk. Skip cari saham lain."
+	}
 
-    // 4. 🔴 MERAH (Bahaya/Turun)
-    } else {
-        score = 1
-        verdict = "🔴 **JANGAN BELI**\nAlasan: Trennya masih turun parah (Downtrend). Jangan dilirik dulu sampai ada tanda-tanda harganya mantul."
-    }
+	return score, verdict, distToMA, ma20
+}
 
-    return score, verdict, distToMA
+// GetMarketFilterStatus mengecek tren IHSG saat ini
+func GetMarketFilterStatus() (bool, string) {
+	// 1. Tarik data IHSG (^JKSE) - Ingat, kembaliannya adalah Struct
+	data, err := market.GetHistoricalPrices("^JKSE")
+	if err != nil {
+		return true, "⚠️ Gagal mengecek IHSG, asumsikan pasar normal." // Fallback
+	}
+
+	// 2. Ekstrak dan bersihkan array harganya (seperti di GetStockScore)
+	var cleanPrices []float64
+	for _, p := range data.Prices {
+		if p > 0 {
+			cleanPrices = append(cleanPrices, p)
+		}
+	}
+
+	// 3. Pastikan data cukup
+	if len(cleanPrices) < 20 {
+		return true, "⚠️ Data IHSG tidak lengkap, asumsikan pasar normal."
+	}
+
+	// 4. Kalkulasi Indikator
+	currentIHSG := cleanPrices[len(cleanPrices)-1]
+	ma20IHSG := calculateMA(cleanPrices, 20)
+	ma5IHSG := calculateMA(cleanPrices, 5)
+
+	// KONDISI 1: MARKET CRASH (IHSG di bawah MA20) -> DILARANG TRADING
+	if currentIHSG < ma20IHSG {
+		return false, fmt.Sprintf("🚨 **MARKET DOWNTREND / CRASH!** 🚨\nIHSG saat ini (%s) berada di bawah tren MA20 (%s).\n\n_Bot menyarankan: **CASH IS KING**. Jangan paksakan entry saat badai!_", utils.FormatRupiah(currentIHSG), utils.FormatRupiah(ma20IHSG))
+	}
+
+	// KONDISI 2: MARKET KOREKSI (IHSG di bawah MA5) -> HATI-HATI
+	if currentIHSG < ma5IHSG {
+		return true, fmt.Sprintf("⚠️ **MARKET SEDANG KOREKSI WAJAR** ⚠️\nIHSG (%s) di bawah MA5, namun tren MA20 masih terjaga.\n\n_Status: Boleh trading, tapi kurangi agresivitas._", utils.FormatRupiah(currentIHSG))
+	}
+
+	// KONDISI 3: MARKET UPTREND
+	return true, fmt.Sprintf("🟢 **MARKET UPTREND (BULLISH)** 🟢\nIHSG (%s) berada kuat di atas MA5 dan MA20.\n\n_Status: Kondisi ideal untuk Fast Swing! Gas poll! 🚀_", utils.FormatRupiah(currentIHSG))
 }

@@ -7,54 +7,56 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"learn-go/internal/config"
+	"learn-go/internal/market"
 	"learn-go/internal/storage"
 	"learn-go/internal/utils"
-	"learn-go/internal/market"
+	"learn-go/internal/models"
 )
 
 func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 	ticker := time.NewTicker(config.CheckPeriod)
-	log.Println("📡 Monitor harga (Dual-Check) aktif dengan Trailing Stop...")
+	log.Println("📡 Monitor harga (Dual-Check) aktif dengan Trailing Stop & Order Match...")
 
 	for range ticker.C {
 		if !utils.IsMarketOpen() {
 			continue
 		}
 
+		// ==========================================
+		// 1. PANTAU PORTOFOLIO AKTIF (MyStocks)
+		// ==========================================
 		for symbol, plan := range config.MyStocks {
 			yahooPrice := market.GetLivePrice(symbol)
 			if yahooPrice == 0 {
 				continue
 			}
 
-			// --- FITUR BARU: UPDATE HIGHEST PRICE UNTUK TRAILING STOP ---
+			// --- UPDATE HIGHEST PRICE ---
 			if plan.HighestPrice == 0 {
-				plan.HighestPrice = plan.EntryPrice // Inisialisasi awal
+				plan.HighestPrice = plan.EntryPrice
 			}
 
-			isNewHigh := false
 			if yahooPrice > plan.HighestPrice {
 				plan.HighestPrice = yahooPrice
-				isNewHigh = true
-			}
-
-			if isNewHigh {
 				config.MyStocks[symbol] = plan
 				storage.SaveData()
 			}
-			// -------------------------------------------------------------
 
-			// Hitung persentase PNL dari Yahoo
+			// 1. Hitung PNL Saat Ini
 			yahooPNL := utils.CalculateNetPNL(plan.EntryPrice, yahooPrice, config.BuyFee, config.SellFee)
 
-			// Hitung batas Trailing Stop dinamis (Cut Loss berdasarkan pucuk)
-			// Misal plan.HighestPrice = 1000, TrailingStopPercent = 0.04 (4%), TSL = 960
+			// 2. Tentukan Batas TSL (Harga Pucuk - 1.5%)
 			tslPrice := plan.HighestPrice * (1 - config.TrailingStopPercent)
 
-			// TRIGGER PENGECEKAN
+			// --- TRIGGER PENGECEKAN ---
 			isTPTrigger := yahooPNL >= config.YahooTPTrigger
-			isTSLTrigger := yahooPrice <= tslPrice // Trigger baru menggunakan angka TSL
-			isCLTrigger := yahooPNL <= -config.YahooCLTrigger 
+			isCLTrigger := yahooPNL <= -config.YahooCLTrigger
+
+			// 🔥 TSL TRIGGER: Terhubung ke TSLActivationTrigger di Config
+			isTSLTrigger := false
+			if yahooPNL >= config.TSLActivationTrigger {
+				isTSLTrigger = yahooPrice <= tslPrice
+			}
 
 			if isTPTrigger || isCLTrigger || isTSLTrigger {
 				// STEP 2: Cross-check Google Finance
@@ -64,66 +66,113 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 				}
 
 				realPNL := utils.CalculateNetPNL(plan.EntryPrice, realPrice, config.BuyFee, config.SellFee)
-				
-				// Verifikasi TSL dengan harga real
-				realTslTriggered := realPrice <= tslPrice
 
-				// STEP 3: Verifikasi Final menggunakan variabel Config
+				// Verifikasi TSL ulang dengan harga real (Tetap cek syarat aktivasi)
+				realTslTriggered := false
+				if realPNL >= config.TSLActivationTrigger {
+					realTslTriggered = realPrice <= tslPrice
+				}
+
+				// STEP 3: Verifikasi Final & Notifikasi
 				conditionMet := false
 				var msg string
 
 				if realPNL >= config.GoogleTPTarget {
-					// KONDISI 1: TAKE PROFIT (Harga Tembus Target Atas)
-					msg = fmt.Sprintf("🎯 **TAKE PROFIT CONFIRMED!**\n\n"+
-						"Emiten: **%s**\n"+
-						"Target: `+%.1f%%`\n"+
-						"Real PNL: `+%.2f%%`\n"+
-						"Harga Google: `%s`\n\n"+
-						"Ketik `/sell %s` jika sudah eksekusi.",
-						symbol, config.GoogleTPTarget, realPNL, utils.FormatRupiah(realPrice), symbol)
+					msg = fmt.Sprintf("🎯 **TAKE PROFIT CONFIRMED!**\n\nEmiten: **%s**\nReal PNL: `+%.2f%%`\nKetik `/sell %s`.", symbol, realPNL, symbol)
 					conditionMet = true
-
 				} else if realTslTriggered {
-					// KONDISI 2: TRAILING STOP (Sabuk Pengaman Tersentuh)
-					securedPNL := ((tslPrice - plan.EntryPrice) / plan.EntryPrice) * 100
-					statusEmoji := "✅" // Profit Diamankan
-					if securedPNL < 0 {
-						statusEmoji = "⚠️" // Rugi Dibatasi
-					}
-
-					msg = fmt.Sprintf("🛡️ **TRAILING STOP TERSENTUH!** %s\n\n"+
-						"Emiten: **%s**\n"+
-						"Puncak Tertinggi: `%s`\n"+
-						"Batas Sabuk (TSL): `%s`\n"+
-						"Harga Google: `%s`\n\n"+
-						"PNL Saat Ini: `%.2f%%`\n\n"+
-						"Ketik `/sell %s` jika sudah jual.",
-						statusEmoji, symbol, utils.FormatRupiah(plan.HighestPrice), utils.FormatRupiah(tslPrice), utils.FormatRupiah(realPrice), securedPNL, symbol)
+					msg = fmt.Sprintf("🛡️ **TRAILING STOP TERSENTUH!** ✅\n\nEmiten: **%s**\nBatas TSL: `%s`\nCuan Aman: `+%.2f%%`\nKetik `/sell %s`.",
+						symbol, utils.FormatRupiah(tslPrice), realPNL, symbol)
 					conditionMet = true
-
 				} else if realPNL <= -config.GoogleCLTarget {
-					// KONDISI 3: CUT LOSS STATIS
-					msg = fmt.Sprintf("🚨 **CUT LOSS CONFIRMED!**\n\n"+
-						"Emiten: **%s**\n"+
-						"Batas: `-%.1f%%`\n"+
-						"Real PNL: `%.2f%%`\n"+
-						"Harga Google: `%s`\n\n"+
-						"Ketik `/sell %s` jika sudah eksekusi.",
-						symbol, config.GoogleCLTarget, realPNL, utils.FormatRupiah(realPrice), symbol)
+					msg = fmt.Sprintf("🚨 **CUT LOSS CONFIRMED!**\n\nEmiten: **%s**\nReal PNL: `%.2f%%`\nKetik `/sell %s`.", symbol, realPNL, symbol)
 					conditionMet = true
 				}
 
-				// STEP 4: Kirim Notifikasi
 				if conditionMet {
-					// Gunakan EmergencyDelay dari Config
 					if time.Since(plan.LastNotified) < config.EmergencyDelay {
 						continue
 					}
-
 					utils.SendMarkdownMessage(bot, msg)
 					plan.LastNotified = time.Now()
 					config.MyStocks[symbol] = plan
 					storage.SaveData()
+				}
+			}
+		}
+
+		// ==========================================
+		// 2. PANTAU ANTREAN BARU (PendingOrders)
+		// ==========================================
+		for symbol, order := range config.PendingOrders {
+			currentPrice := market.GetLivePrice(symbol)
+			if currentPrice == 0 {
+				continue
+			}
+
+			// --- KONDISI 1: AUTO MATCH (LANTAI TERSENTUH/JEBOL) ---
+			// Jika harga market sudah sama dengan atau lebih rendah dari harga antrean kita
+			if currentPrice <= order.OrderPrice {
+				
+				// Pindahkan dari PendingOrders ke MyStocks (Portofolio Aktif)
+				// menggunakan struct models.TradingPlan (sinkron dengan ProcessBuyCommand)
+				plan := models.TradingPlan{
+					Symbol:       symbol,
+					EntryPrice:   order.OrderPrice, // Catat harga belinya sesuai antrean
+					HighestPrice: order.OrderPrice,
+					Lots:         order.Lot,        // Ambil jumlah lot dari data antrean
+					TakeProfit:   order.OrderPrice * (1 + config.TPPercent),
+					CutLoss:      order.OrderPrice * (1 - config.CLPercent),
+				}
+				
+				config.MyStocks[symbol] = plan
+
+				// Hapus dari antrean
+				delete(config.PendingOrders, symbol)
+
+				// Log transaksinya persis seperti fungsi buy
+				storage.LogTrade("BUY", symbol, order.OrderPrice, order.Lot, 0.0, "Auto-Match dari Antrean")
+
+				// Simpan perubahan ke storage agar permanen
+				storage.SaveData()
+
+				// Hitung total modal terpakai (termasuk fee) untuk notifikasi
+				totalModal := order.OrderPrice * float64(order.Lot) * 100 * (1 + config.BuyFee)
+
+				msg := fmt.Sprintf("✅ **ANTREAN MATCHED!**\n\n"+
+					"Emiten: **%s**\n"+
+					"Harga Beli: `Rp. %.0f`\n"+
+					"Jumlah: `%d Lot`\n"+
+					"Modal Terpakai: `%s` _(Termasuk Fee)_\n\n"+
+					"_Saham telah otomatis masuk ke portofolio aktif. Radar Cut Loss & Trailing Stop sekarang MENYALA._ 🛡️",
+					symbol, order.OrderPrice, order.Lot, utils.FormatRupiah(totalModal))
+					
+				utils.SendMarkdownMessage(bot, msg)
+
+				continue // Lanjut ke antrean berikutnya
+			}
+
+			// --- KONDISI 2: HARGA KABUR (OPPORTUNITY COST) ---
+			// Hitung seberapa jauh harga sekarang meninggalkan harga antrean
+			diffPercent := (currentPrice - order.OrderPrice) / order.OrderPrice
+
+			// Jika harga kabur melebihi batas (misal > 3%)
+			if diffPercent >= config.RunawayPercent {
+				// Jeda notifikasi agar tidak spam (misal 1 jam sekali / 60 menit)
+				if time.Since(order.LastNotified) > 60*time.Minute {
+					msg := fmt.Sprintf("🏃‍♂️💨 **HARGA KABUR BOS!**\n\n"+
+						"Emiten: **%s**\n"+
+						"Antreanmu: `Rp. %.0f`\n"+
+						"Harga Sekarang: `Rp. %.0f` (Naik +%.1f%%)\n\n"+
+						"Uangnya nganggur nih. Mending ditarik aja antreannya di aplikasi sekuritas.\n\n"+
+						"👉 Ketik `/cancel_antre %s` untuk hapus dari pantauan bot.",
+						symbol, order.OrderPrice, currentPrice, diffPercent*100, symbol)
+
+					utils.SendMarkdownMessage(bot, msg)
+
+					// Update waktu notifikasi terakhir
+					order.LastNotified = time.Now()
+					config.PendingOrders[symbol] = order
 				}
 			}
 		}

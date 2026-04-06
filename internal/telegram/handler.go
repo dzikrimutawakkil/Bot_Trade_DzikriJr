@@ -2,11 +2,12 @@ package telegram
 
 import (
 	"strings"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"learn-go/internal/config"
 	"learn-go/internal/portfolio"
-	"learn-go/internal/utils"
 	"learn-go/internal/research"
+	"learn-go/internal/utils"
 )
 
 func HandleMessages(bot *tgbotapi.BotAPI) {
@@ -43,6 +44,24 @@ func HandleMessages(bot *tgbotapi.BotAPI) {
 
 		// Cek teks UTUH terlebih dahulu (Untuk tombol keyboard)
 		switch text {
+		case "/start", "/menu":
+			// --- FITUR BARU: Memunculkan kembali Keyboard Menu ---
+			msg := tgbotapi.NewMessage(config.MyChatID, "🤖 DzikriJr siap membantu, Bos! Silakan pilih menu di bawah ini 👇")
+			
+			// Rakit deretan tombol keyboard
+			keyboard := tgbotapi.NewReplyKeyboard(
+				tgbotapi.NewKeyboardButtonRow(
+					tgbotapi.NewKeyboardButton("📊 Status"),
+					tgbotapi.NewKeyboardButton("❓ Recomend"),
+				),
+			)
+			// Atur agar ukurannya menyesuaikan layar HP
+			keyboard.ResizeKeyboard = true 
+			
+			msg.ReplyMarkup = keyboard
+			bot.Send(msg)
+			continue
+			
 		case "/status", "📊 Status":
 			portfolio.ProcessStatusCommand(bot)
 			continue
@@ -63,6 +82,10 @@ func HandleMessages(bot *tgbotapi.BotAPI) {
 			portfolio.ProcessSellCommand(bot, args)
 		case "/research":
 			research.ProcessResearchCommand(bot, args)
+		case "/antre":
+			portfolio.ProcessAntreCommand(bot, args)
+		case "/cancel_antre":
+			portfolio.ProcessCancelAntreCommand(bot, args)
 		case "/evaluate":
 			portfolio.ProcessPortfolioEvaluation(bot)
 		default:

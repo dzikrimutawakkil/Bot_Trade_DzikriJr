@@ -18,7 +18,7 @@ import (
 )
 
 func getPortfolioEvaluation(plan models.TradingPlan, currentPrice float64, newsContent string, technicalContent string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	client, err := genai.NewClient(ctx, option.WithAPIKey(config.GeminiAPIKey)) 
@@ -94,7 +94,7 @@ func ProcessPortfolioEvaluation(bot *tgbotapi.BotAPI) {
 	utils.SendSimpleMessage(bot, "🔄 _Menyiapkan Rapat Pagi: Evaluasi Portofolio..._")
 
 	var finalReport strings.Builder
-	finalReport.WriteString("📋 **MORNING BRIEFING: EVALUASI PORTOFOLIO** 📋\n\n")
+	finalReport.WriteString("📋 **EVALUASI PORTOFOLIO** 📋\n\n")
 
 	for symbol, plan := range config.MyStocks {
 		// Ambil data harga terbaru pagi ini
