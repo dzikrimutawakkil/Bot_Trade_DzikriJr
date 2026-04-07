@@ -27,6 +27,7 @@ type Recommendation struct {
 	DistToMA     float64
 	DeepAnalysis string
 	Sentiment    float64
+	MA20         float64
 }
 
 // TradingPlan: Struktur data untuk saham yang dipantau
@@ -45,4 +46,11 @@ type HistoricalData struct {
 	Prices []float64
 	Volumes []float64
 	Symbol string
+}
+
+type ActiveOrder struct {
+	Symbol       string
+	OrderPrice   float64
+	Lot          int
+	LastNotified time.Time
 }
