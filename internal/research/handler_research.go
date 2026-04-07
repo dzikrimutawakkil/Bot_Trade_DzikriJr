@@ -51,7 +51,10 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 
 	var planText string
 	if currentPrice > 0 {
-		cutLossPrice := currentPrice * (1 - config.CLPercent)
+		// --- PEMBULATAN FRAKSI DI SINI ---
+		cutLossRaw := currentPrice * (1 - config.CLPercent)
+		cutLossPrice := utils.RoundToFraction(cutLossRaw) // SUDAH DIBULATKAN!
+		
 		lossPerLot := (currentPrice - cutLossPrice) * 100
 		
 		maxRiskRupiah := config.TotalModalTrading * config.MaxRiskPerTrade
@@ -113,16 +116,17 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 		}
 		return results[i].Score > results[j].Score
 	})
+
 	// 🔥 FILTERING PINTAR (The Hunter Algorithm) 🔥
 	var finalCandidates []models.Recommendation
 	aiCallCount := 0
-	maxAICalls := 10       // Sabuk pengaman 1: Maksimal nanya AI 10 kali agar API tidak limit
-	targetSetups := 3      // Sabuk pengaman 2: Kita cukup cari 3 saham "BELI" terbaik
+	maxAICalls := 10      // Sabuk pengaman 1: Maksimal nanya AI 10 kali agar API tidak limit
+	targetSetups := 3     // Sabuk pengaman 2: Kita cukup cari 3 saham "BELI" terbaik
 
 	for _, res := range results {
 		// Hanya proses saham yang secara teknikal bagus (Skor >= 8)
 		if res.Score >= 8 {
-			
+
 			// Kalau sudah terlalu banyak nanya AI, hentikan pencarian
 			if aiCallCount >= maxAICalls {
 				break
@@ -136,13 +140,13 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 
 			if err == nil && analysis != "" {
 				upperAnalysis := strings.ToUpper(analysis)
-				
+
 				// 2. Langsung Cek Apakah AI merekomendasikan "BELI"
 				if strings.Contains(upperAnalysis, "REKOMENDASI: BELI") || strings.Contains(analysis, "🟢") {
 					res.DeepAnalysis = analysis
 					res.Sentiment = extractSentimentScore(analysis)
 					finalCandidates = append(finalCandidates, res)
-					
+
 					// 3. EARLY EXIT: Kalau sudah dapat 3 saham incaran, LANGSUNG BERHENTI!
 					if len(finalCandidates) >= targetSetups {
 						break
@@ -199,17 +203,20 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 		if currentPrice == 0 {
 			currentPrice = market.GetGooglePrice(res.Symbol)
 		}
-		
+
 		if currentPrice > 0 {
 			// LOGIKA BoW: Cut Loss ditaruh 2% di BAWAH MA20 (Support)
-			cutLossPrice := res.MA20 * 0.98
+			cutLossRaw := res.MA20 * 0.98
+			cutLossPrice := utils.RoundToFraction(cutLossRaw) // BULATKAN!
 
-			idealBuyMin := res.MA20
-			idealBuyMax := res.MA20 + ((currentPrice - res.MA20) * 0.5)
+			idealBuyMinRaw := res.MA20
+			idealBuyMin := utils.RoundToFraction(idealBuyMinRaw) // BULATKAN!
 
+			idealBuyMaxRaw := res.MA20 + ((currentPrice - res.MA20) * 0.5)
 			if currentPrice <= res.MA20 {
-				idealBuyMax = currentPrice
+				idealBuyMaxRaw = currentPrice
 			}
+			idealBuyMax := utils.RoundToFraction(idealBuyMaxRaw) // BULATKAN!
 
 			lossPerLot := (currentPrice - cutLossPrice) * 100
 			if lossPerLot <= 0 {

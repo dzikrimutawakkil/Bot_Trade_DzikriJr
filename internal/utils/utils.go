@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 	"log"
+	"math"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"learn-go/internal/config"
 )
@@ -78,4 +79,28 @@ func CalculateNetPNL(entryPrice float64, currentPrice float64, buyFee float64, s
 	
 	// Rumus untung bersih
 	return ((netSellValue - totalBuyCapital) / totalBuyCapital) * 100
+}
+
+func RoundToFraction(price float64) float64 {
+	var fraction float64
+
+	switch {
+	case price < 50:
+		// Saham gocap atau di bawahnya (aturan papan pemantauan khusus)
+		fraction = 1 
+	case price < 200:
+		fraction = 1
+	case price < 500:
+		fraction = 2
+	case price < 2000:
+		fraction = 5
+	case price < 5000:
+		fraction = 10
+	default:
+		// Harga di atas 5000
+		fraction = 25
+	}
+
+	// Rumus pembulatan ke kelipatan terdekat
+	return math.Round(price/fraction) * fraction
 }
