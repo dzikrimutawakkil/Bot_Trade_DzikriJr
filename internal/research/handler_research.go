@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"time"
 	"math"
+	"log"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"learn-go/internal/config"
@@ -16,8 +17,6 @@ import (
 	"learn-go/internal/market"
 )
 
-// Logika /research yang tadinya di dalam loop
-// Logika /research yang terintegrasi dengan Position Sizing
 func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 	if len(args) != 2 {
 		utils.SendSimpleMessage(bot, "❌ Format salah! Gunakan: `/research [KODE]`")
@@ -33,8 +32,9 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 		return
 	}
 
-	// 2. Fetch Teknikal untuk AI
+	// 2. Fetch Teknikal untuk AI & Ambil Angka MA20
 	technicalData := FetchTechnicalData(symbol)
+	_, _, _, ma20 := GetStockScore(symbol) // <-- AMBIL MA20 UNTUK LOGIKA BoW
 
 	// 3. Analisis AI Gemini
 	analysis, err := GetDeepAnalysis(symbol, news, technicalData)
@@ -43,7 +43,7 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 		return
 	}
 
-	// 4. KALKULATOR POSITION SIZING (RISK MANAGEMENT)
+	// 4. KALKULATOR POSITION SIZING (SINKRON DENGAN RECOMMENDATION)
 	currentPrice := market.GetLivePrice(symbol)
 	if currentPrice == 0 {
 		currentPrice = market.GetGooglePrice(symbol) // Fallback
@@ -51,33 +51,81 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 
 	var planText string
 	if currentPrice > 0 {
-		cutLossPrice := currentPrice * (1 - config.CLPercent)
-		lossPerLot := (currentPrice - cutLossPrice) * 100
-		
-		maxRiskRupiah := config.TotalModalTrading * config.MaxRiskPerTrade
-		maxLots := math.Floor(maxRiskRupiah / lossPerLot)
-		
-		// Cegah hasil infinity atau error jika pembagian salah
-		if maxLots < 0 {
-			maxLots = 0
+		// Fallback jika API MA20 gagal/kosong
+		if ma20 <= 0 {
+			ma20 = currentPrice 
 		}
-		
-		cashNeeded := currentPrice * maxLots * 100 * (1 + config.BuyFee)
 
-		planText = fmt.Sprintf("\n\n━━━━━━━━━━━━━━━━━━━━\n📐 **TRADING PLAN (Risk 1%%)**\n"+
-			"Harga Saat Ini : %s\n"+
-			"Batas Cut Loss : %s (-%.1f%%)\n"+
-			"Maksimal Beli  : **%v LOT**\n"+
-			"Estimasi Modal : %s\n\n"+
-			"_👉 Ketik_ `/buy %s %.0f %v` _jika ingin eksekusi._",
-			utils.FormatRupiah(currentPrice), utils.FormatRupiah(cutLossPrice), config.CLPercent*100,
-			maxLots, utils.FormatRupiah(cashNeeded), symbol, currentPrice, maxLots)
+		// LOGIKA BoW: Area Beli & Cut Loss berpatokan pada MA20
+		cutLossRaw := ma20 * (1 - config.CLPercent)
+		cutLossPrice := utils.RoundToFraction(cutLossRaw)
+
+		idealBuyMin := utils.RoundToFraction(ma20)
+		
+		idealBuyMaxRaw := ma20 + ((currentPrice - ma20) * 0.5)
+		if currentPrice <= ma20 {
+			idealBuyMaxRaw = currentPrice
+		}
+		idealBuyMax := utils.RoundToFraction(idealBuyMaxRaw)
+
+		lossPerLot := (currentPrice - cutLossPrice) * 100
+		if lossPerLot <= 0 {
+			lossPerLot = 1
+		}
+
+		// 1. Hitung Jatah Risiko (Risk Limit)
+		maxRiskRupiah := config.TotalModalTrading * config.MaxRiskPerTrade
+		isMarketSafe, _ := GetMarketFilterStatus()
+		warningDefensif := ""
+		if !isMarketSafe {
+			maxRiskRupiah = maxRiskRupiah / 2.0
+			warningDefensif = " 🛡️ _(Defensive Mode)_"
+		}
+
+		maxLotsByRisk := math.Floor(maxRiskRupiah / lossPerLot)
+		if maxLotsByRisk < 0 {
+			maxLotsByRisk = 0
+		}
+
+		// 2. Hitung berdasarkan sisa Cash Limit
+		hargaSatuLot := currentPrice * 100 * (1 + config.BuyFee)
+		maxLotsByCash := math.Floor(config.TotalModalTrading / hargaSatuLot)
+		if maxLotsByCash < 0 {
+			maxLotsByCash = 0
+		}
+
+		maxLots := int(math.Min(maxLotsByRisk, maxLotsByCash))
+
+		// 3. Hitung Target Profit
+		tpMinPrice := utils.RoundToFraction(idealBuyMin * (1 + config.TPPercent))
+		tpMaxPrice := utils.RoundToFraction(idealBuyMax * (1 + config.TPPercent))
+
+		planText = fmt.Sprintf(`
+		━━━━━━━━━━━━━━━━━━
+		📐 **TRADING PLAN (Max %d LOT)**%s
+		📍 **Harga Saat Ini** : Rp %.0f
+		🧱 **Area MA20** : Rp %.0f
+
+		🎯 **AREA BELI IDEAL : Rp %.0f - Rp %.0f**
+		_(Gunakan antrean Limit di fitur Auto Order!)_
+
+		🚨 **Batas Cut Loss** : Rp %.0f (Jebol Support)
+		🚀 **Target Profit** : Rp %.0f - Rp %.0f
+		🛡️ **Trailing Stop** : %.1f%% (Aktifkan saat profit mantap)
+		━━━━━━━━━━━━━━━━━━
+
+		👉 Ketik /buy %s %.0f %d jika ingin eksekusi.`, 
+		maxLots, warningDefensif, currentPrice, ma20, 
+		idealBuyMin, idealBuyMax, cutLossPrice, 
+		tpMinPrice, tpMaxPrice, 
+		(config.TrailingStopPercent * 100), 
+		symbol, currentPrice, maxLots)
 	} else {
-		planText = "\n\n_(Gagal menarik harga live untuk kalkulasi Position Sizing)_"
+		planText = "\n\n_(Gagal menarik harga live untuk kalkulasi Position Sizing)_\n"
 	}
 
 	// 5. Gabungkan Hasil AI dengan Kalkulator
-	response := fmt.Sprintf("🔍 **Hasil Deep Research: %s**\n\n%s%s", symbol, analysis, planText)
+	response := fmt.Sprintf("🔍 **Hasil Deep Research: %s**\n\n%s\n%s", symbol, analysis, planText)
 	
 	utils.SendMarkdownMessage(bot, response)
 }
@@ -113,16 +161,20 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 		}
 		return results[i].Score > results[j].Score
 	})
+
 	// 🔥 FILTERING PINTAR (The Hunter Algorithm) 🔥
 	var finalCandidates []models.Recommendation
 	aiCallCount := 0
-	maxAICalls := 10       // Sabuk pengaman 1: Maksimal nanya AI 10 kali agar API tidak limit
-	targetSetups := 3      // Sabuk pengaman 2: Kita cukup cari 3 saham "BELI" terbaik
+	maxAICalls := 10      // Sabuk pengaman 1: Maksimal nanya AI 10 kali agar API tidak limit
+	targetSetups := 3     // Sabuk pengaman 2: Kita cukup cari 3 saham "BELI" terbaik
 
 	for _, res := range results {
+
+		log.Printf("Evaluasi %s - Score: %.0f, Status: %s, Jarak ke MA20: %.2f%%\n", res.Symbol, res.Score, res.Status, res.DistToMA)
+
 		// Hanya proses saham yang secara teknikal bagus (Skor >= 8)
 		if res.Score >= 8 {
-			
+
 			// Kalau sudah terlalu banyak nanya AI, hentikan pencarian
 			if aiCallCount >= maxAICalls {
 				break
@@ -136,13 +188,13 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 
 			if err == nil && analysis != "" {
 				upperAnalysis := strings.ToUpper(analysis)
-				
+
 				// 2. Langsung Cek Apakah AI merekomendasikan "BELI"
 				if strings.Contains(upperAnalysis, "REKOMENDASI: BELI") || strings.Contains(analysis, "🟢") {
 					res.DeepAnalysis = analysis
 					res.Sentiment = extractSentimentScore(analysis)
 					finalCandidates = append(finalCandidates, res)
-					
+
 					// 3. EARLY EXIT: Kalau sudah dapat 3 saham incaran, LANGSUNG BERHENTI!
 					if len(finalCandidates) >= targetSetups {
 						break
@@ -199,17 +251,20 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 		if currentPrice == 0 {
 			currentPrice = market.GetGooglePrice(res.Symbol)
 		}
-		
+
 		if currentPrice > 0 {
 			// LOGIKA BoW: Cut Loss ditaruh 2% di BAWAH MA20 (Support)
-			cutLossPrice := res.MA20 * 0.98
+			cutLossRaw := res.MA20 * 0.98
+			cutLossPrice := utils.RoundToFraction(cutLossRaw) // BULATKAN!
 
-			idealBuyMin := res.MA20
-			idealBuyMax := res.MA20 + ((currentPrice - res.MA20) * 0.5)
+			idealBuyMinRaw := res.MA20
+			idealBuyMin := utils.RoundToFraction(idealBuyMinRaw) // BULATKAN!
 
+			idealBuyMaxRaw := res.MA20 + ((currentPrice - res.MA20) * 0.5)
 			if currentPrice <= res.MA20 {
-				idealBuyMax = currentPrice
+				idealBuyMaxRaw = currentPrice
 			}
+			idealBuyMax := utils.RoundToFraction(idealBuyMaxRaw) // BULATKAN!
 
 			lossPerLot := (currentPrice - cutLossPrice) * 100
 			if lossPerLot <= 0 {
@@ -241,12 +296,18 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 
 			tradingPlanText := fmt.Sprintf(`
 			📐 **TRADING PLAN (Max %d LOT)**%s
-			Harga Saat Ini : Rp. %.0f
-			Area MA20 (Lantai): Rp. %.0f
-			🎯 **Area Beli Ideal : Rp. %.0f - Rp. %.0f**
-			**(Gunakan Antrean Limit!)**
-			Batas Cut Loss : Rp. %.0f (Jebol Support)
-			`, maxLots, warningDefensif, currentPrice, res.MA20, idealBuyMin, idealBuyMax, cutLossPrice)
+			━━━━━━━━━━━━━━━━━━
+			📍 **Harga Saat Ini** : Rp %.0f
+			🧱 **Area MA20** : Rp %.0f
+
+			🎯 **AREA BELI IDEAL : Rp %.0f - Rp %.0f**
+			_(Gunakan antrean Limit di fitur Auto Order!)_
+
+			🚨 **Batas Cut Loss** : Rp %.0f (Jebol Support)
+			🚀 **Target Profit** : Rp %.0f - Rp %.0f
+			🛡️ **Trailing Stop** : 2.5%% (Aktifkan saat profit mantap)
+			━━━━━━━━━━━━━━━━━━
+			`, maxLots, warningDefensif, currentPrice, res.MA20, idealBuyMin, idealBuyMax, cutLossPrice, utils.RoundToFraction(idealBuyMin*(1+config.TPPercent)), utils.RoundToFraction(idealBuyMax*(1+config.TPPercent)))
 
 			sb.WriteString(tradingPlanText)
 		} else {

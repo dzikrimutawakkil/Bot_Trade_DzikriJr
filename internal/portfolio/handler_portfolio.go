@@ -23,15 +23,16 @@ func ProcessBuyCommand(bot *tgbotapi.BotAPI, args []string) {
 	entry, _ := strconv.ParseFloat(args[2], 64)
 	lots, _ := strconv.Atoi(args[3])
 
-	// Hitung batas TSL awal (berdasarkan harga beli saat ini)
-	initialTSL := entry * (1 - config.TrailingStopPercent)
+	// --- PERBAIKAN: Hitung dan BULATKAN batas TSL awal ---
+	initialTSLRaw := entry * (1 - config.TrailingStopPercent)
+	initialTSL := utils.RoundToFraction(initialTSLRaw)
 
 	plan := models.TradingPlan{
 		Symbol:       symbol,
 		EntryPrice:   entry,
-		TakeProfit:   entry * (1 + config.TPPercent),
-		CutLoss:      entry * (1 - config.CLPercent),
-		HighestPrice: entry, // Inisialisasi awal pucuk = harga beli
+		TakeProfit:   utils.RoundToFraction(entry * (1 + config.TPPercent)), // BULATKAN!
+		CutLoss:      utils.RoundToFraction(entry * (1 - config.CLPercent)), // BULATKAN!
+		HighestPrice: entry, 
 		Lots:         lots,
 	}
 	config.MyStocks[symbol] = plan
