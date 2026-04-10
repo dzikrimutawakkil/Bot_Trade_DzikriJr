@@ -12,7 +12,7 @@ import (
 	"learn-go/internal/portfolio"
 	"learn-go/internal/storage"
 	"learn-go/internal/telegram"
-	"learn-go/internal/research" // <-- Tambahkan import ini
+	"learn-go/internal/research"
 )
 
 func main() {
@@ -30,15 +30,32 @@ func main() {
 	c := cron.New(cron.WithLocation(jakartaTime))
 
 	c.AddFunc("45 8 * * 1-5", func() {
-		portfolio.ProcessPortfolioEvaluation(bot)
+		portfolio.ProcessPortfolioEvaluation(bot) // Rapat Pagi
 	})
 
 	c.AddFunc("30 12 * * 1-5", func() {
 		portfolio.ProcessPortfolioEvaluation(bot) // Noon Briefing
 	})
 
-	c.AddFunc("30 16 * * 5", func() {
-		research.ProcessRecommendation(bot) // Laporan Jumat sore
+	// 🔥 THE GOLDEN HOUR: Tiap Senin-Jumat jam 15:40 WIB
+	c.AddFunc("40 15 * * 1-5", func() {
+		log.Println("Memeriksa sisa peluru sebelum mengeksekusi Hunter Algorithm...")
+
+		// Hitung total modal yang sedang terpakai di pasar
+		var modalTerpakai float64
+		for _, plan := range config.MyStocks {
+			modalTerpakai += plan.EntryPrice * float64(plan.Lots) * 100 * (1 + config.BuyFee)
+		}
+
+		sisaModal := config.TotalModalTrading - modalTerpakai
+
+		// Syarat: Jalan kalau portofolio KOSONG atau SISA MODAL masih di atas Rp 250.000 
+		// (Ubah angka 250000 ini sesuai batas minimal kamu buat beli 1 saham)
+		if len(config.MyStocks) == 0 || sisaModal > 250000 {
+			research.ProcessRecommendation(bot)
+		} else {
+			log.Printf("Skip Hunter Algorithm. Peluru tersisa (Rp %.0f) terlalu tipis.\n", sisaModal)
+		}
 	})
 
 	c.Start()

@@ -146,7 +146,7 @@ func FetchTechnicalData(symbol string) string {
 
 // Fungsi AI yang sudah di-UPGRADE (Menerima input Teknikal)
 func GetDeepAnalysis(symbol string, newsContent string, technicalContent string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
 	client, err := genai.NewClient(ctx, option.WithAPIKey(config.GeminiAPIKey))
@@ -156,6 +156,7 @@ func GetDeepAnalysis(symbol string, newsContent string, technicalContent string)
 	defer client.Close()
 
 	model := client.GenerativeModel("gemini-flash-latest")
+	model.Temperature = genai.Ptr(float32(0.0))
 	log.Printf("[AI] Mengirim data BERITA dan TEKNIKAL %s ke Gemini...", symbol)
 
 	prompt := fmt.Sprintf(`
