@@ -144,8 +144,7 @@ func FetchTechnicalData(symbol string) string {
 	return report
 }
 
-// Fungsi AI yang sudah di-UPGRADE (Menerima input Teknikal)
-// Fungsi AI yang sudah di-UPGRADE (Menerima input Market Regime)
+// Fungsi AI yang sudah di-UPGRADE (Menerima input Market Regime & Log Tracing)
 func GetDeepAnalysis(symbol string, newsContent string, technicalContent string, marketRegime string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
@@ -158,7 +157,6 @@ func GetDeepAnalysis(symbol string, newsContent string, technicalContent string,
 
 	model := client.GenerativeModel("gemini-flash-latest")
 	model.Temperature = genai.Ptr(float32(0.0))
-	log.Printf("[AI] Mengirim data %s ke Gemini (Mode: %s)...", symbol, marketRegime)
 
 	// --- LOGIKA BUNGLON UNTUK PROMPT AI ---
 	strategiUtama := ""
@@ -211,11 +209,20 @@ func GetDeepAnalysis(symbol string, newsContent string, technicalContent string,
 		_Alasan: [Satu kalimat solid fokus pada risiko (Risk/Reward)]_
 	`, marketRegime, strategiUtama, symbol, newsContent, technicalContent, aturanTrading, strategiUtama)
 
+	// --- TAMBAHAN LOG TRACING DI SINI ---
+	log.Printf("[AI] ⏳ Menunggu balasan dari server Gemini untuk %s... (Maksimal 3 menit)", symbol)
+	startTime := time.Now() // Mulai stopwatch
+
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	
+	duration := time.Since(startTime) // Stopwatch berhenti
+
 	if err != nil {
-		log.Printf("[AI] Gagal dapat respon: %v", err)
+		log.Printf("[AI] ❌ Gagal dapat respon untuk %s setelah %v: %v", symbol, duration, err)
 		return "", err
 	}
+
+	log.Printf("[AI] ✅ Respon diterima untuk %s dalam waktu %v", symbol, duration)
 
 	if len(resp.Candidates) > 0 {
 		var sb strings.Builder

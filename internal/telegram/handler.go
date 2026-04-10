@@ -88,6 +88,8 @@ func HandleMessages(bot *tgbotapi.BotAPI) {
 			portfolio.ProcessCancelAntreCommand(bot, args)
 		case "/evaluate":
 			portfolio.ProcessPortfolioEvaluation(bot)
+		case "/performance":
+			portfolio.ProcessPerformanceCommand(bot)
 		default:
 			utils.SendSimpleMessage(bot, "Gunakan perintah:\n`/buy [KODE] [HARGA] [LOT]`\n`/status` | `/recommend`")
 		}

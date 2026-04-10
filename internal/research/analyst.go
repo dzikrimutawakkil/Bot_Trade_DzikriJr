@@ -93,7 +93,7 @@ func GetScoreBoW(symbol string) (float64, string, float64, float64) {
 	return score, verdict, distToMA, ma20
 }
 
-// 2. STRATEGI BULLISH (Breakout Momentum) + Fake Breakout Protection
+// 2. STRATEGI BULLISH (Breakout Momentum) + Fake Breakout Protection + Strict Green Candle
 func GetScoreBreakout(symbol string) (float64, string, float64, float64) {
 	data, err := market.GetHistoricalPrices(symbol)
 	if err != nil { return -1, "", -1, 0 }
@@ -113,6 +113,8 @@ func GetScoreBreakout(symbol string) (float64, string, float64, float64) {
 	lastPrice := cleanPrices[len(cleanPrices)-1]
 	lastHigh := cleanHighs[len(cleanHighs)-1]
 	lastOpen := cleanOpens[len(cleanOpens)-1]
+	yesterdayPrice := cleanPrices[len(cleanPrices)-2] // <--- Harga penutupan kemarin
+	
 	ma20 := calculateMA(cleanPrices, 20)
 	ma5 := calculateMA(cleanPrices, 5)
 	
@@ -121,39 +123,45 @@ func GetScoreBreakout(symbol string) (float64, string, float64, float64) {
 
 	distToMA5 := ((lastPrice - ma5) / ma5) * 100
 
-	// 🛑 FILTER 1: LIKUIDITAS (Anti Saham Sepi / Gorengan)
-	// Jika rata-rata volume di bawah 2 juta lembar (20.000 lot) sehari
+	// 🛑 FILTER 1: LIKUIDITAS
 	if avgVol < 2000000 {
-		return 1, "🔴 **SKIP (TIDAK LIKUID)**\nAlasan: Transaksi terlalu sepi. Rawan dimanipulasi bandar dan sulit jualan.", distToMA5, ma5
+		return 1, "🔴 **SKIP (TIDAK LIKUID)**\nAlasan: Transaksi terlalu sepi.", distToMA5, ma5
 	}
 
-	// 🛑 FILTER 2: FAKE BREAKOUT (Jarum Atas)
-	// Jika bayangan atas (upper wick) lebih panjang 1.5x lipat dari body candle
+	// 🛑 FILTER 2: FAKE BREAKOUT (Jarum Atas Diperketat)
 	upperWick := lastHigh - lastPrice
 	bodySize := lastPrice - lastOpen
-	if bodySize < 0 { bodySize = lastOpen - lastPrice } // Nilai absolut
-	if bodySize == 0 { bodySize = 1 } // Mencegah error dibagi nol
+	if bodySize < 0 { bodySize = lastOpen - lastPrice } 
+	if bodySize == 0 { bodySize = 1 } 
 
-	if upperWick > (bodySize * 1.5) && lastPrice > ma5 {
-		return 3, "🟡 **FAKE BREAKOUT (JARUM ATAS)**\nAlasan: Harga ditarik naik tapi dibanting lagi ke bawah (tekanan jual besar). Menghindari jebakan pucuk!", distToMA5, ma5
+	// Diperketat: Wick lebih panjang dari body sedikit saja langsung buang
+	if upperWick > bodySize && lastPrice > ma5 {
+		return 3, "🟡 **FAKE BREAKOUT (JARUM ATAS)**\nAlasan: Harga ditarik naik tapi dibanting lagi. Terindikasi guyuran distribusi!", distToMA5, ma5
 	}
 
 	// LOGIKA SKORING BREAKOUT UTAMA
 	score := 0.0
 	verdict := ""
 
-	if lastPrice > ma5 && lastPrice > ma20 && lastVol > (avgVol*1.5) {
+	// KONDISI 1: GOLDEN BREAKOUT (Volume > 1.5x, Candle Hijau)
+	if lastPrice > ma5 && lastPrice > ma20 && lastVol > (avgVol*1.5) && lastPrice > lastOpen {
 		score = 10
-		verdict = "🟢 **SETUP BREAKOUT MOMENTUM**\nAlasan: Harga naik di atas MA5 dengan lonjakan volume solid (tanpa jarum atas panjang). Bandar akumulasi!"
-	} else if lastPrice > ma5 && lastPrice > ma20 && distToMA5 <= 3.0 {
+		verdict = "🟢 **SETUP BREAKOUT MOMENTUM**\nAlasan: Harga naik di atas MA5 dengan lonjakan volume solid dan candle hijau. Bandar akumulasi!"
+	
+	// KONDISI 2: BUY ON STRENGTH (Diperketat: WAJIB Candle Hijau & Naik dari Kemarin)
+	} else if lastPrice > ma5 && lastPrice > ma20 && distToMA5 <= 3.0 && lastPrice > lastOpen && lastPrice > yesterdayPrice {
 		score = 8
-		verdict = "🟠 **BUY ON STRENGTH**\nAlasan: Harga merayap naik perlahan di atas MA5 dengan jarak aman. Boleh antre."
+		verdict = "🟠 **BUY ON STRENGTH**\nAlasan: Harga merayap naik, membentuk higher-high, dan candle hari ini hijau. Tren masih solid terjaga."
+	
+	// KONDISI 3: RAWAN PUCUK
 	} else if distToMA5 > 5.0 {
 		score = 4
 		verdict = "🟡 **RAWAN PUCUK (OVEREXTENDED)**\nAlasan: Sudah terbang terlalu jauh dari MA5. Berisiko dibanting."
+	
+	// KONDISI 4: GAGAL FILTER (Candle Merah / Turun / Tidak ada momentum)
 	} else {
 		score = 2
-		verdict = "🔴 **TIDAK ADA MOMENTUM**\nAlasan: Harga di bawah MA5 atau pergerakan kurang agresif."
+		verdict = "🔴 **TIDAK ADA MOMENTUM / CANDLE MERAH**\nAlasan: Pergerakan kurang agresif atau sedang terjadi aksi taking profit (candle merah)."
 	}
 
 	return score, verdict, distToMA5, ma5

@@ -10,7 +10,7 @@ import (
 )
 
 // LogTrade akan mencatat setiap transaksi ke dalam file CSV
-func LogTrade(action, symbol string, price float64, lots int, pnlPercent float64, notes string) {
+func LogTrade(action, symbol string, price float64, lots int, strategy string, pnlPercent float64, notes string) {
 	fileName := "trade_history.csv"
 	
 	// Cek apakah file sudah ada
@@ -32,7 +32,7 @@ func LogTrade(action, symbol string, price float64, lots int, pnlPercent float64
 
 	// Jika file baru dibuat, tulis Header (judul kolom) terlebih dahulu
 	if !fileExists {
-		header := []string{"Waktu", "Aksi", "Saham", "Harga", "Lot", "PNL (%)", "Catatan"}
+		header := []string{"Waktu", "Aksi", "Saham", "Harga", "Lot", "Strategi", "PNL (%)", "Catatan"}
 		writer.Write(header)
 	}
 
@@ -43,6 +43,7 @@ func LogTrade(action, symbol string, price float64, lots int, pnlPercent float64
 		symbol,                                   // Kode Saham (ADRO, EMTK, dll)
 		fmt.Sprintf("%.0f", price),               // Harga eksekusi
 		fmt.Sprintf("%d", lots),                  // Jumlah Lot
+		strategy,								 // Strategi yang digunakan (BoW, Breakout, dll)
 		fmt.Sprintf("%.2f", pnlPercent),          // Untung/Rugi dalam persen
 		notes,                                    // Catatan khusus
 	}

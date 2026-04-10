@@ -15,7 +15,7 @@ import (
 
 func ProcessBuyCommand(bot *tgbotapi.BotAPI, args []string) {
 	if len(args) < 4 {
-		utils.SendSimpleMessage(bot, "❌ Format salah! Gunakan: `/buy [KODE] [HARGA] [LOT]`")
+		utils.SendSimpleMessage(bot, "❌ Format: `/buy [KODE] [HARGA] [LOT] [STRATEGI]`")
 		return
 	}
 
@@ -27,9 +27,15 @@ func ProcessBuyCommand(bot *tgbotapi.BotAPI, args []string) {
 	initialTSLRaw := entry * (1 - config.TrailingStopPercent)
 	initialTSL := utils.RoundToFraction(initialTSLRaw)
 
+	strategy := "Manual"
+	if len(args) >= 5 {
+		strategy = args[4]
+	}
+
 	plan := models.TradingPlan{
 		Symbol:       symbol,
 		EntryPrice:   entry,
+		Strategy:     strategy,
 		TakeProfit:   utils.RoundToFraction(entry * (1 + config.TPPercent)), // BULATKAN!
 		CutLoss:      utils.RoundToFraction(entry * (1 - config.CLPercent)), // BULATKAN!
 		HighestPrice: entry, 
@@ -38,7 +44,7 @@ func ProcessBuyCommand(bot *tgbotapi.BotAPI, args []string) {
 	config.MyStocks[symbol] = plan
 	storage.SaveData()
 
-	storage.LogTrade("BUY", symbol, entry, lots, 0.0, "Entry awal")
+	storage.LogTrade("BUY", symbol, entry, lots, strategy, 0.0, "Entry awal")
 
 	// Hitung modal asli yang terpotong di RDN (termasuk Fee Beli Bibit 0.15%)
 	totalModal := entry * float64(lots) * 100 * (1 + config.BuyFee)
@@ -105,7 +111,7 @@ func ProcessSellCommand(bot *tgbotapi.BotAPI, args []string) {
 		}
 
 		// 4. Catat ke dalam CSV sebelum datanya dihapus
-		storage.LogTrade("SELL", symbol, sellPrice, plan.Lots, netPNL, catatan)
+		storage.LogTrade("SELL", symbol, sellPrice, plan.Lots, "Manual", netPNL, catatan)
 
 		// 5. Hapus pantauan portofolio dan simpan
 		delete(config.MyStocks, symbol)

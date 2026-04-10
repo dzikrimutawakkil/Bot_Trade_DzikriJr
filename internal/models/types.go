@@ -40,6 +40,7 @@ type TradingPlan struct {
 	CutLoss      float64
 	HighestPrice float64
 	Lots         int
+	Strategy     string
 	LastNotified time.Time
 }
 
@@ -56,5 +57,6 @@ type ActiveOrder struct {
 	Symbol       string
 	OrderPrice   float64
 	Lot          int
+	Strategy     string
 	LastNotified time.Time
 }

@@ -143,6 +143,13 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 	marketRegime, marketStatusMsg := GetMarketFilterStatus() // <-- UBAH DI SINI
 	utils.SendMarkdownMessage(bot, marketStatusMsg)
 
+	strategyLabel := "BoW"
+	if marketRegime == "BULLISH" {
+		strategyLabel = "Breakout"
+	} else if marketRegime == "BEARISH" {
+		strategyLabel = "Defensive"
+	}
+
 	utils.SendSimpleMessage(bot, "⏳ Proses sortir Amunisi (Watchlist) sedang berlangsung...")
 
 	var results []models.Recommendation
@@ -308,7 +315,7 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 			📐 **TRADING PLAN (Max %d LOT)**%s
 			━━━━━━━━━━━━━━━━━━
 			📍 **Harga Saat Ini** : Rp %.0f
-			🧱 **Area MA20** : Rp %.0f
+			🧱 **Area Support** : Rp %.0f
 
 			🎯 **AREA BELI IDEAL : Rp %.0f - Rp %.0f**
 			_(Gunakan antrean Limit di fitur Auto Order!)_
@@ -317,7 +324,9 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 			🚀 **Target Profit** : Rp %.0f - Rp %.0f
 			🛡️ **Trailing Stop** : 2.5%% (Aktifkan saat profit mantap)
 			━━━━━━━━━━━━━━━━━━
-			`, maxLots, warningDefensif, currentPrice, res.MA20, idealBuyMin, idealBuyMax, cutLossPrice, utils.RoundToFraction(idealBuyMin*(1+config.TPPercent)), utils.RoundToFraction(idealBuyMax*(1+config.TPPercent)))
+			👉 **Ketik:** `+"`/buy %s %.0f %d %s`"+`
+			`+"`/antre %s %.0f %d %s`"+`
+			`, maxLots, warningDefensif, currentPrice, res.MA20, idealBuyMin, idealBuyMax, cutLossPrice, utils.RoundToFraction(idealBuyMin*(1+config.TPPercent)), utils.RoundToFraction(idealBuyMax*(1+config.TPPercent)), res.Symbol, currentPrice, maxLots, strategyLabel, res.Symbol, idealBuyMin, maxLots, strategyLabel)
 
 			sb.WriteString(tradingPlanText)
 		} else {

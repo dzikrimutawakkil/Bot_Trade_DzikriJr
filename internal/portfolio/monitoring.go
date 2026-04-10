@@ -123,6 +123,7 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 					Lots:         order.Lot,        // Ambil jumlah lot dari data antrean
 					TakeProfit:   order.OrderPrice * (1 + config.TPPercent),
 					CutLoss:      order.OrderPrice * (1 - config.CLPercent),
+					Strategy:     order.Strategy,
 				}
 				
 				config.MyStocks[symbol] = plan
@@ -131,7 +132,7 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 				delete(config.PendingOrders, symbol)
 
 				// Log transaksinya persis seperti fungsi buy
-				storage.LogTrade("BUY", symbol, order.OrderPrice, order.Lot, 0.0, "Auto-Match dari Antrean")
+				storage.LogTrade("BUY", symbol, order.OrderPrice, order.Lot, order.Strategy, 0.0, "Auto-Match dari Antrean")
 
 				// Simpan perubahan ke storage agar permanen
 				storage.SaveData()
