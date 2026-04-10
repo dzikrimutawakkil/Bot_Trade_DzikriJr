@@ -145,7 +145,8 @@ func FetchTechnicalData(symbol string) string {
 }
 
 // Fungsi AI yang sudah di-UPGRADE (Menerima input Teknikal)
-func GetDeepAnalysis(symbol string, newsContent string, technicalContent string) (string, error) {
+// Fungsi AI yang sudah di-UPGRADE (Menerima input Market Regime)
+func GetDeepAnalysis(symbol string, newsContent string, technicalContent string, marketRegime string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -157,10 +158,28 @@ func GetDeepAnalysis(symbol string, newsContent string, technicalContent string)
 
 	model := client.GenerativeModel("gemini-flash-latest")
 	model.Temperature = genai.Ptr(float32(0.0))
-	log.Printf("[AI] Mengirim data BERITA dan TEKNIKAL %s ke Gemini...", symbol)
+	log.Printf("[AI] Mengirim data %s ke Gemini (Mode: %s)...", symbol, marketRegime)
+
+	// --- LOGIKA BUNGLON UNTUK PROMPT AI ---
+	strategiUtama := ""
+	aturanTrading := ""
+
+	if marketRegime == "BULLISH" {
+		strategiUtama = "**BREAKOUT MOMENTUM / RIDE THE TREND (Fast Swing)**"
+		aturanTrading = "1. **STRATEGI UTAMA:** Fokus pada Momentum! Rekomendasikan BELI jika harga menembus MA5 ke atas dengan lonjakan volume. Jangan takut merekomendasikan saham yang sedang naik (bukan pucuk, tapi breakout).\n2. **HINDARI:** Saham yang harganya tembus ke bawah MA5 atau volumenya hilang."
+	} else if marketRegime == "BEARISH" {
+		strategiUtama = "**DEFENSIVE / BOTTOM FISHING**"
+		aturanTrading = "1. **STRATEGI UTAMA:** Sangat Konservatif! Hanya rekomendasikan beli jika saham berada di area Support sangat kuat dengan volume jual yang sudah habis.\n2. **HINDARI:** Pisau jatuh (saham yang trennya sedang hancur). Lebih baik rekomendasikan HINDARI."
+	} else {
+		strategiUtama = "**BUY ON WEAKNESS (BoW) / PULLBACK**"
+		aturanTrading = "1. **STRATEGI UTAMA:** Rekomendasikan BELI HANYA JIKA harga terkoreksi mendekati Support MA20 DAN volume mengering (seller habis).\n2. **HINDARI:** Jangan kejar saham yang sudah terbang terlalu jauh dari MA20 (Rawan Pucuk FOMO)."
+	}
 
 	prompt := fmt.Sprintf(`
-		Bertindaklah sebagai Analis Saham Profesional khusus **FAST SWING (Hold 1-5 Hari)** dengan strategi **BUY ON WEAKNESS (BoW) / Contrarian**.
+		Bertindaklah sebagai Analis Saham Profesional. 
+		Kondisi IHSG saat ini sedang **%s**. 
+		Strategi trading yang harus kamu gunakan saat ini adalah: %s.
+
 		Analisis saham %s berdasarkan data berikut:
 
 		[DATA FUNDAMENTAL & SENTIMEN BERITA]
@@ -170,36 +189,33 @@ func GetDeepAnalysis(symbol string, newsContent string, technicalContent string)
 		%s
 
 		⚠️ **ATURAN TRADING (WAJIB DIIKUTI!)** ⚠️
-		1. **STRATEGI UTAMA (BoW):** Rekomendasikan BELI HANYA JIKA "Status Setup" adalah "🟢 SETUP BUY ON WEAKNESS" (harga terkoreksi mendekati MA20) DAN volume menunjukkan "📉 VOLUME KERING". Ini berarti tekanan jual ritel sudah habis.
-		2. **HINDARI PUCUK FOMO:** Jika "Status Setup" menunjukkan "🔴 RAWAN PUCUK" atau ada "🔥 LONJAKAN VOLUME" setelah harga naik berhari-hari, rekomendasikan JUAL/TAHAN. Itu adalah jebakan distribusi bandar (Sell on News).
-		3. **HARAM MENGAMBIL PISAU JATUH:** Jika statusnya "💀 PISAU JATUH", WAJIB rekomendasikan HINDARI.
+		%s
 
 		WAJIB gunakan format persis seperti di bawah ini. Gunakan pemformatan Markdown:
 
 		🎯 **Skor Sentimen:** [Angka 1-10]/10
 		🤖 **AI Confidence:** [Angka 0-100]%%
 		🚀 **Katalis Utama:** [Tulis HANYA 1 kalimat singkat alasan paling kuat untuk beli/hindari]
-		📊 **Tren Teknikal:** [Pullback ke Support / Overextended / Downtrend] (Berikan emoji yang sesuai)
-		🌊 **Volume:** [Sebutkan apakah Kering (Bagus) atau Lonjakan (Bahaya)]
+		📊 **Tren Teknikal:** [Tulis status trennya] (Berikan emoji yang sesuai)
+		🌊 **Volume:** [Sebutkan kondisinya: Kering / Lonjakan Akumulasi / Distribusi]
 		🔑 **Kata Kunci:** [3-5 kata kunci]
 
 		📝 **Kesimpulan Analisis:**
-		[Tulis 2-3 kalimat. Jelaskan mengapa koreksi saat ini adalah peluang beli murah (BoW) berdasarkan rendahnya volume, ATAU jelaskan mengapa harga saat ini terlalu pucuk untuk dikejar. Abaikan RSI.]
+		[Tulis 2-3 kalimat. Jelaskan mengapa setup ini valid berdasarkan strategi %s yang sedang digunakan. Jangan gunakan alasan BoW jika strategi saat ini adalah Breakout.]
 
 		[PILIH HANYA SALAH SATU FORMAT REKOMENDASI DI BAWAH INI:]
 		🟢 **REKOMENDASI: BELI**
 		🟡 **REKOMENDASI: TAHAN / PANTAU**
 		🔴 **REKOMENDASI: HINDARI (SKIP)**
 
-		_Alasan: [Satu kalimat solid fokus pada risiko (Risk/Reward) dan jarak harga terhadap garis MA20]_
-	`, symbol, newsContent, technicalContent)
+		_Alasan: [Satu kalimat solid fokus pada risiko (Risk/Reward)]_
+	`, marketRegime, strategiUtama, symbol, newsContent, technicalContent, aturanTrading, strategiUtama)
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
 		log.Printf("[AI] Gagal dapat respon: %v", err)
 		return "", err
 	}
-	log.Printf("[AI] Respon berhasil diterima!")
 
 	if len(resp.Candidates) > 0 {
 		var sb strings.Builder

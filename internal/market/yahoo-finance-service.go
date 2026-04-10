@@ -85,9 +85,11 @@ func GetHistoricalPrices(symbol string) (models.HistoricalData, error) {
 
 	if len(data.Chart.Result) > 0 {
 		return models.HistoricalData{
-			Prices: data.Chart.Result[0].Indicators.Quote[0].Close,
+			Prices:  data.Chart.Result[0].Indicators.Quote[0].Close,
 			Volumes: data.Chart.Result[0].Indicators.Quote[0].Volume,
-			Symbol: symbol,
+			Highs:   data.Chart.Result[0].Indicators.Quote[0].High, // <-- TAMBAHKAN INI
+			Opens:   data.Chart.Result[0].Indicators.Quote[0].Open, // <-- TAMBAHKAN INI
+			Symbol:  symbol,
 		}, nil
 	}
 	return models.HistoricalData{}, fmt.Errorf("data kosong")

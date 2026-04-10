@@ -2,12 +2,14 @@ package research
 
 import (
 	"fmt"
-    "learn-go/internal/market"
-    "learn-go/internal/utils"
+	"learn-go/internal/market"
+	"learn-go/internal/utils"
 )
 
 func calculateMA(prices []float64, period int) float64 {
-	if len(prices) < period { return 0 }
+	if len(prices) < period {
+		return 0
+	}
 	sum := 0.0
 	for i := len(prices) - period; i < len(prices); i++ {
 		sum += prices[i]
@@ -17,96 +19,174 @@ func calculateMA(prices []float64, period int) float64 {
 
 func calculateRSI(prices []float64) float64 {
 	period := 14
-	if len(prices) < period+1 { return 0 }
+	if len(prices) < period+1 {
+		return 0
+	}
 
 	var gains, losses float64
 	for i := len(prices) - period; i < len(prices); i++ {
 		diff := prices[i] - prices[i-1]
-		if diff > 0 { gains += diff } else { losses -= diff }
+		if diff > 0 {
+			gains += diff
+		} else {
+			losses -= diff
+		}
 	}
-	
-	if losses == 0 { return 100 }
+
+	if losses == 0 {
+		return 100
+	}
 	rs := (gains / float64(period)) / (losses / float64(period))
 	return 100 - (100 / (1 + rs))
 }
 
-func GetStockScore(symbol string) (float64, string, float64, float64) {
+// 1. STRATEGI SIDEWAYS (Buy on Weakness) + Filter Likuiditas
+func GetScoreBoW(symbol string) (float64, string, float64, float64) {
 	data, err := market.GetHistoricalPrices(symbol)
-	if err != nil { return -1, "", -1, 0}
+	if err != nil { return -1, "", -1, 0 }
 
-	var cleanPrices []float64
-	var cleanVolumes []float64
+	var cleanPrices, cleanVolumes []float64
 	for i, p := range data.Prices {
-		if p > 0 && i < len(data.Volumes) && data.Volumes[i] > 0 { 
+		if p > 0 && i < len(data.Volumes) && data.Volumes[i] > 0 {
 			cleanPrices = append(cleanPrices, p)
 			cleanVolumes = append(cleanVolumes, data.Volumes[i])
 		}
 	}
-	
+
 	if len(cleanPrices) < 20 { return -1, "Data kurang", -1, 0 }
 
-	// --- KALKULASI INDIKATOR ---
 	lastPrice := cleanPrices[len(cleanPrices)-1]
 	ma20 := calculateMA(cleanPrices, 20)
 	ma5 := calculateMA(cleanPrices, 5)
-	
+
 	lastVol := cleanVolumes[len(cleanVolumes)-1]
 	avgVol := calculateMA(cleanVolumes, 20)
-	
-	// RSI masih bisa dipakai sekadar untuk filter tambahan
 	rsiToday := calculateRSI(cleanPrices)
 
-	// Hitung jarak harga ke MA20 dalam persen (Sangat Krusial untuk BoW)
 	distToMA := ((lastPrice - ma20) / ma20) * 100
+
+	// 🛑 FILTER 1: LIKUIDITAS (Anti Saham Sepi / Gorengan)
+	if avgVol < 2000000 {
+		return 1, "🔴 **SKIP (TIDAK LIKUID)**\nAlasan: Transaksi terlalu sepi. Rawan dimanipulasi bandar dan sulit jualan.", distToMA, ma20
+	}
 
 	score := 0.0
 	verdict := ""
 
-	// --- LOGIKA SKORING BUY ON WEAKNESS (BoW) ---
-
-	// 1. 🟢 HIJAU SANGAT KUAT (Golden Setup BoW)
-	// Syarat: Harga di atas MA20 (Masih Uptrend Utama), tapi sedang koreksi di bawah MA5, 
-	// jarak ke MA20 sangat dekat (0% s/d 3%), DAN Volume Kering (Seller habis).
 	if lastPrice >= ma20 && lastPrice < ma5 && distToMA <= 3.0 && lastVol < avgVol {
 		score = 10
-		verdict = "🟢 **SETUP BUY ON WEAKNESS (GOLDEN)**\nAlasan: Harga sedang koreksi mendekati Support MA20 dengan volume kering (Tekanan jual ritel sudah habis). Ini adalah area beli risiko rendah."
-	
-	// 2. 🟠 SIAGA (Hampir Menyentuh Support / Koreksi dengan Volume Normal)
-	// Syarat: Harga masih di atas MA20, jarak < 5%, tapi volume belum benar-benar kering.
+		verdict = "🟢 **SETUP BUY ON WEAKNESS (GOLDEN)**\nAlasan: Harga terkoreksi mendekati Support MA20 dengan volume kering. Area beli risiko rendah."
 	} else if lastPrice >= ma20 && lastPrice < ma5 && distToMA <= 5.0 {
 		score = 8
-		verdict = "🟠 **SIAGA PANTULAN (BoW)**\nAlasan: Harga sedang turun mendekati Support MA20. Pantau ketat, siap-siap entry jika besok muncul pantulan."
-
-	// 3. 🟡 RAWAN PUCUK / KEMAHALAN (Mantan Setup Breakout)
-	// Syarat: Harga terbang jauh di atas MA20 (> 5%) atau RSI sudah kepanasan.
+		verdict = "🟠 **SIAGA PANTULAN (BoW)**\nAlasan: Harga sedang turun mendekati Support MA20. Pantau ketat."
 	} else if distToMA > 5.0 || rsiToday > 70 {
-		score = 4 // Skor kita turunkan drastis agar tidak direkomendasikan AI
-		verdict = "🟡 **RAWAN PUCUK / FOMO**\nAlasan: Harga sudah terbang terlalu jauh dari Support MA20. Berisiko besar terkena bantingan (Take Profit bandar). Jangan dikejar!"
-
-	// 4. 🔴 PISAU JATUH (Downtrend Parah)
-	// Syarat: Harga tembus ke bawah MA20 (Support jebol).
+		score = 4
+		verdict = "🟡 **RAWAN PUCUK / FOMO**\nAlasan: Harga terbang terlalu jauh dari Support MA20. Jangan dikejar!"
 	} else if lastPrice < ma20 {
 		score = 1
-		verdict = "🔴 **PISAU JATUH (DOWNTREND)**\nAlasan: Harga sudah jebol ke bawah MA20. Tren utama rusak. Hindari saham ini sampai dia bisa naik lagi ke atas MA20."
-	
-	// 5. Kondisi Sideways / Tanggung
+		verdict = "🔴 **PISAU JATUH (DOWNTREND)**\nAlasan: Harga jebol ke bawah MA20. Tren utama rusak. Hindari!"
 	} else {
 		score = 5
-		verdict = "⚪ **TANGGUNG / SIDEWAYS**\nAlasan: Harga nanggung, tidak dekat support dan tidak terlalu pucuk. Skip cari saham lain."
+		verdict = "⚪ **TANGGUNG / SIDEWAYS**\nAlasan: Harga nanggung, tidak dekat support dan tidak terlalu pucuk. Skip."
 	}
 
 	return score, verdict, distToMA, ma20
 }
 
-// GetMarketFilterStatus mengecek tren IHSG saat ini
-func GetMarketFilterStatus() (bool, string) {
-	// 1. Tarik data IHSG (^JKSE) - Ingat, kembaliannya adalah Struct
-	data, err := market.GetHistoricalPrices("^JKSE")
-	if err != nil {
-		return true, "⚠️ Gagal mengecek IHSG, asumsikan pasar normal." // Fallback
+// 2. STRATEGI BULLISH (Breakout Momentum) + Fake Breakout Protection
+func GetScoreBreakout(symbol string) (float64, string, float64, float64) {
+	data, err := market.GetHistoricalPrices(symbol)
+	if err != nil { return -1, "", -1, 0 }
+
+	var cleanPrices, cleanVolumes, cleanHighs, cleanOpens []float64
+	for i, p := range data.Prices {
+		if p > 0 && i < len(data.Volumes) && data.Volumes[i] > 0 && i < len(data.Highs) && i < len(data.Opens) {
+			cleanPrices = append(cleanPrices, p)
+			cleanVolumes = append(cleanVolumes, data.Volumes[i])
+			cleanHighs = append(cleanHighs, data.Highs[i])
+			cleanOpens = append(cleanOpens, data.Opens[i])
+		}
 	}
 
-	// 2. Ekstrak dan bersihkan array harganya (seperti di GetStockScore)
+	if len(cleanPrices) < 20 { return -1, "Data kurang", -1, 0 }
+
+	lastPrice := cleanPrices[len(cleanPrices)-1]
+	lastHigh := cleanHighs[len(cleanHighs)-1]
+	lastOpen := cleanOpens[len(cleanOpens)-1]
+	ma20 := calculateMA(cleanPrices, 20)
+	ma5 := calculateMA(cleanPrices, 5)
+	
+	lastVol := cleanVolumes[len(cleanVolumes)-1]
+	avgVol := calculateMA(cleanVolumes, 20)
+
+	distToMA5 := ((lastPrice - ma5) / ma5) * 100
+
+	// 🛑 FILTER 1: LIKUIDITAS (Anti Saham Sepi / Gorengan)
+	// Jika rata-rata volume di bawah 2 juta lembar (20.000 lot) sehari
+	if avgVol < 2000000 {
+		return 1, "🔴 **SKIP (TIDAK LIKUID)**\nAlasan: Transaksi terlalu sepi. Rawan dimanipulasi bandar dan sulit jualan.", distToMA5, ma5
+	}
+
+	// 🛑 FILTER 2: FAKE BREAKOUT (Jarum Atas)
+	// Jika bayangan atas (upper wick) lebih panjang 1.5x lipat dari body candle
+	upperWick := lastHigh - lastPrice
+	bodySize := lastPrice - lastOpen
+	if bodySize < 0 { bodySize = lastOpen - lastPrice } // Nilai absolut
+	if bodySize == 0 { bodySize = 1 } // Mencegah error dibagi nol
+
+	if upperWick > (bodySize * 1.5) && lastPrice > ma5 {
+		return 3, "🟡 **FAKE BREAKOUT (JARUM ATAS)**\nAlasan: Harga ditarik naik tapi dibanting lagi ke bawah (tekanan jual besar). Menghindari jebakan pucuk!", distToMA5, ma5
+	}
+
+	// LOGIKA SKORING BREAKOUT UTAMA
+	score := 0.0
+	verdict := ""
+
+	if lastPrice > ma5 && lastPrice > ma20 && lastVol > (avgVol*1.5) {
+		score = 10
+		verdict = "🟢 **SETUP BREAKOUT MOMENTUM**\nAlasan: Harga naik di atas MA5 dengan lonjakan volume solid (tanpa jarum atas panjang). Bandar akumulasi!"
+	} else if lastPrice > ma5 && lastPrice > ma20 && distToMA5 <= 3.0 {
+		score = 8
+		verdict = "🟠 **BUY ON STRENGTH**\nAlasan: Harga merayap naik perlahan di atas MA5 dengan jarak aman. Boleh antre."
+	} else if distToMA5 > 5.0 {
+		score = 4
+		verdict = "🟡 **RAWAN PUCUK (OVEREXTENDED)**\nAlasan: Sudah terbang terlalu jauh dari MA5. Berisiko dibanting."
+	} else {
+		score = 2
+		verdict = "🔴 **TIDAK ADA MOMENTUM**\nAlasan: Harga di bawah MA5 atau pergerakan kurang agresif."
+	}
+
+	return score, verdict, distToMA5, ma5
+}
+
+// 3. THE ROUTER: Memilih strategi berdasarkan cuaca IHSG
+func EvaluateStockAdaptive(symbol string, marketRegime string) (float64, string, float64, float64) {
+	switch marketRegime {
+	case "BULLISH":
+		return GetScoreBreakout(symbol)
+
+	case "BEARISH":
+		score, verdict, dist, ma := GetScoreBoW(symbol)
+		if score < 10 {
+			score = 1
+			verdict = "🔴 **SKIP (MARKET CRASH)**\nAlasan: Setup kurang kuat untuk melawan arus IHSG yang sedang hancur."
+		}
+		return score, verdict, dist, ma
+
+	case "SIDEWAYS":
+		fallthrough
+	default:
+		return GetScoreBoW(symbol)
+	}
+}
+
+// 4. SENSOR PASAR (IHSG Tracker)
+func GetMarketFilterStatus() (string, string) {
+	data, err := market.GetHistoricalPrices("^JKSE")
+	if err != nil {
+		return "SIDEWAYS", "⚠️ Gagal mengecek IHSG, asumsikan pasar normal (SIDEWAYS)."
+	}
+
 	var cleanPrices []float64
 	for _, p := range data.Prices {
 		if p > 0 {
@@ -114,26 +194,21 @@ func GetMarketFilterStatus() (bool, string) {
 		}
 	}
 
-	// 3. Pastikan data cukup
 	if len(cleanPrices) < 20 {
-		return true, "⚠️ Data IHSG tidak lengkap, asumsikan pasar normal."
+		return "SIDEWAYS", "⚠️ Data IHSG tidak lengkap, asumsikan pasar normal (SIDEWAYS)."
 	}
 
-	// 4. Kalkulasi Indikator
 	currentIHSG := cleanPrices[len(cleanPrices)-1]
 	ma20IHSG := calculateMA(cleanPrices, 20)
 	ma5IHSG := calculateMA(cleanPrices, 5)
 
-	// KONDISI 1: MARKET CRASH (IHSG di bawah MA20) -> DILARANG TRADING
 	if currentIHSG < ma20IHSG {
-		return false, fmt.Sprintf("🚨 **MARKET DOWNTREND / CRASH!** 🚨\nIHSG saat ini (%s) berada di bawah tren MA20 (%s).\n\n_Bot menyarankan: **CASH IS KING**. Jangan paksakan entry saat badai!_", utils.FormatRupiah(currentIHSG), utils.FormatRupiah(ma20IHSG))
+		return "BEARISH", fmt.Sprintf("🚨 **MARKET DOWNTREND (BEARISH)** 🚨\nIHSG saat ini (%s) berada di bawah tren MA20 (%s).\n\n_Bot beralih ke Mode Defensif. Hanya mencari saham anti-badai._", utils.FormatRupiah(currentIHSG), utils.FormatRupiah(ma20IHSG))
 	}
 
-	// KONDISI 2: MARKET KOREKSI (IHSG di bawah MA5) -> HATI-HATI
 	if currentIHSG < ma5IHSG {
-		return true, fmt.Sprintf("⚠️ **MARKET SEDANG KOREKSI WAJAR** ⚠️\nIHSG (%s) di bawah MA5, namun tren MA20 masih terjaga.\n\n_Status: Boleh trading, tapi kurangi agresivitas._", utils.FormatRupiah(currentIHSG))
+		return "SIDEWAYS", fmt.Sprintf("⚠️ **MARKET KOREKSI WAJAR (SIDEWAYS)** ⚠️\nIHSG (%s) di bawah MA5, namun tren MA20 masih terjaga.\n\n_Bot beralih ke Mode Normal (Buy on Weakness)._", utils.FormatRupiah(currentIHSG))
 	}
 
-	// KONDISI 3: MARKET UPTREND
-	return true, fmt.Sprintf("🟢 **MARKET UPTREND (BULLISH)** 🟢\nIHSG (%s) berada kuat di atas MA5 dan MA20.\n\n_Status: Kondisi ideal untuk Fast Swing! Gas poll! 🚀_", utils.FormatRupiah(currentIHSG))
+	return "BULLISH", fmt.Sprintf("🟢 **MARKET UPTREND (BULLISH)** 🟢\nIHSG (%s) berada kuat di atas MA5 dan MA20.\n\n_Bot beralih ke Mode Agresif (Momentum/Breakout)! Gas poll! 🚀_", utils.FormatRupiah(currentIHSG))
 }

@@ -34,10 +34,11 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 
 	// 2. Fetch Teknikal untuk AI & Ambil Angka MA20
 	technicalData := FetchTechnicalData(symbol)
-	_, _, _, ma20 := GetStockScore(symbol) // <-- AMBIL MA20 UNTUK LOGIKA BoW
+	_, _, _, ma20 := GetScoreBreakout(symbol) // <-- AMBIL MA20 UNTUK LOGIKA BoW
 
-	// 3. Analisis AI Gemini
-	analysis, err := GetDeepAnalysis(symbol, news, technicalData)
+	// 3. Analisis AI Gemini dengan tambahan konteks "Market Regime" (Cuaca Pasar)
+	marketRegime, _ := GetMarketFilterStatus() // Ambil cuaca IHSG dulu
+	analysis, err := GetDeepAnalysis(symbol, news, technicalData, marketRegime)
 	if err != nil {
 		utils.SendSimpleMessage(bot, "❌ Gagal melakukan analisis AI.")
 		return
@@ -75,9 +76,9 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 
 		// 1. Hitung Jatah Risiko (Risk Limit)
 		maxRiskRupiah := config.TotalModalTrading * config.MaxRiskPerTrade
-		isMarketSafe, _ := GetMarketFilterStatus()
+		marketRegime, _ := GetMarketFilterStatus() // <-- UBAH DI SINI
 		warningDefensif := ""
-		if !isMarketSafe {
+		if marketRegime == "BEARISH" {             // <-- UBAH DI SINI
 			maxRiskRupiah = maxRiskRupiah / 2.0
 			warningDefensif = " 🛡️ _(Defensive Mode)_"
 		}
@@ -131,25 +132,34 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 }
 
 func ProcessRecommendation(bot *tgbotapi.BotAPI) {
+	if len(config.MyStocks) >= 3 {
+		utils.SendSimpleMessage(bot, "🛑 **Portofolio Penuh!**\nKamu sudah memegang 3 saham aktif. Fokus kawal yang ada (Take Profit / Trailing Stop / Cut Loss) sebelum mencari mangsa baru agar peluru tidak pecah.")
+		return
+	}
+
 	// --- FITUR BARU: MARKET FILTER IHSG ---
 	utils.SendSimpleMessage(bot, "🔎 Mengecek kondisi angin IHSG (Market Trend)...")
 
-	isMarketSafe, marketStatusMsg := GetMarketFilterStatus()
+	marketRegime, marketStatusMsg := GetMarketFilterStatus() // <-- UBAH DI SINI
 	utils.SendMarkdownMessage(bot, marketStatusMsg)
 
-	utils.SendSimpleMessage(bot, "⏳ Proses sortir watchlist sedang berlangsung...")
+	utils.SendSimpleMessage(bot, "⏳ Proses sortir Amunisi (Watchlist) sedang berlangsung...")
 
 	var results []models.Recommendation
 
-	for _, s := range config.Watchlist {
-		score, status, distToMA, ma20 := GetStockScore(s)
+	// 1. AMBIL WATCHLIST SESUAI CUACA PASAR (Dinamis)
+	activeWatchlist := config.GetActiveWatchlist(marketRegime)
+
+	// 2. SCAN MENGGUNAKAN ROUTER STRATEGI (Bunglon)
+	for _, s := range activeWatchlist {
+		score, status, distToMA, maPatokan := EvaluateStockAdaptive(s, marketRegime)
 		if score > 0 {
 			results = append(results, models.Recommendation{
 				Symbol:   s,
 				Score:    score,
 				Status:   status,
 				DistToMA: distToMA,
-				MA20:     ma20,
+				MA20:     maPatokan, // maPatokan bisa MA5 (Breakout) atau MA20 (BoW)
 			})
 		}
 	}
@@ -183,7 +193,7 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 			// 1. Tanya AI (Deep Research)
 			news, _ := FetchNewsRSS(res.Symbol)
 			tech := FetchTechnicalData(res.Symbol)
-			analysis, err := GetDeepAnalysis(res.Symbol, news, tech)
+			analysis, err := GetDeepAnalysis(res.Symbol, news, tech, marketRegime)
 			aiCallCount++
 
 			if err == nil && analysis != "" {
@@ -275,7 +285,7 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 			maxRiskRupiah := config.TotalModalTrading * config.MaxRiskPerTrade
 
 			warningDefensif := ""
-			if !isMarketSafe {
+			if marketRegime == "BEARISH" { // <-- UBAH DI SINI
 				maxRiskRupiah = maxRiskRupiah / 2.0
 				warningDefensif = " 🛡️ _(Defensive Mode)_"
 			}

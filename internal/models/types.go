@@ -12,6 +12,8 @@ type YahooChartResponse struct {
 			} `json:"meta"`
 			Indicators struct {
 				Quote []struct {
+					Open   []float64 `json:"open"`
+					High   []float64 `json:"high"`
 					Close []float64 `json:"close"`
 					Volume []float64 `json:"volume"`
 				} `json:"quote"`
@@ -45,6 +47,8 @@ type TradingPlan struct {
 type HistoricalData struct {
 	Prices []float64
 	Volumes []float64
+	Highs   []float64
+	Opens   []float64
 	Symbol string
 }
 
