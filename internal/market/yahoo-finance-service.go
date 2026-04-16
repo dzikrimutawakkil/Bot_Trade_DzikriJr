@@ -20,7 +20,6 @@ func GetLivePrice(symbol string) float64 {
 	client := &http.Client{}
 	req, _ := http.NewRequest("GET", url, nil)
 
-	// Header wajib agar tidak dianggap bot
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8")
 
@@ -45,10 +44,8 @@ func GetLivePrice(symbol string) float64 {
 	if len(data.Chart.Result) > 0 {
 		result := data.Chart.Result[0]
 		
-		// Coba ambil harga terakhir dari array 'close' (biasanya lebih update beberapa detik)
 		quotes := result.Indicators.Quote[0].Close
 		if len(quotes) > 0 {
-			// Ambil data non-null terakhir
 			for i := len(quotes) - 1; i >= 0; i-- {
 				if quotes[i] > 0 {
 					return quotes[i]
@@ -56,7 +53,6 @@ func GetLivePrice(symbol string) float64 {
 			}
 		}
 		
-		// Fallback ke meta price
 		return result.Meta.RegularMarketPrice
 	}
 
@@ -80,14 +76,18 @@ func GetHistoricalPrices(symbol string) (models.HistoricalData, error) {
 	if err != nil { return models.HistoricalData{}, err }
 	defer resp.Body.Close()
 
-	var data models.YahooChartResponse // Pakai struct yang sudah kita buat sebelumnya
+	var data models.YahooChartResponse 
 	json.NewDecoder(resp.Body).Decode(&data)
 
-	if len(data.Chart.Result) > 0 {
+	if len(data.Chart.Result) > 0 && len(data.Chart.Result[0].Indicators.Quote) > 0 {
+		quote := data.Chart.Result[0].Indicators.Quote[0]
 		return models.HistoricalData{
-			Prices: data.Chart.Result[0].Indicators.Quote[0].Close,
-			Volumes: data.Chart.Result[0].Indicators.Quote[0].Volume,
-			Symbol: symbol,
+			Opens:   quote.Open,
+			Highs:   quote.High,
+			Lows:    quote.Low,
+			Prices:  quote.Close,
+			Volumes: quote.Volume,
+			Symbol:  symbol,
 		}, nil
 	}
 	return models.HistoricalData{}, fmt.Errorf("data kosong")

@@ -12,7 +12,10 @@ type YahooChartResponse struct {
 			} `json:"meta"`
 			Indicators struct {
 				Quote []struct {
-					Close []float64 `json:"close"`
+					Open   []float64 `json:"open"`
+					High   []float64 `json:"high"`
+					Low    []float64 `json:"low"`
+					Close  []float64 `json:"close"`
 					Volume []float64 `json:"volume"`
 				} `json:"quote"`
 			} `json:"indicators"`
@@ -41,11 +44,14 @@ type TradingPlan struct {
 	LastNotified time.Time
 }
 
-// [FIX 2] Ubah namanya kembali jadi HistoricalData karena service.go nyari nama ini
+// HistoricalData sekarang menyimpan array OHLC utuh
 type HistoricalData struct {
-	Prices []float64
+	Opens   []float64
+	Highs   []float64
+	Lows    []float64
+	Prices  []float64 // Ini adalah Close
 	Volumes []float64
-	Symbol string
+	Symbol  string
 }
 
 type ActiveOrder struct {

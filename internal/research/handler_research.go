@@ -56,17 +56,21 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 			ma20 = currentPrice 
 		}
 
-		// LOGIKA BoW: Area Beli & Cut Loss berpatokan pada MA20
-		cutLossRaw := ma20 * (1 - config.CLPercent)
+		// --- LOGIKA BARU: CONFIRMED BoW (C-BoW) ---
+		// Cari titik ekor bawah (Low) untuk Cut Loss Struktural
+		hist, errHist := market.GetHistoricalPrices(symbol)
+		signalLow := ma20 * 0.98 // Fallback jika gagal ambil historis
+		if errHist == nil && len(hist.Lows) > 0 {
+			signalLow = hist.Lows[len(hist.Lows)-1]
+		}
+
+		// LOGIKA CUT LOSS STRUKTURAL: 1% di bawah ekor candle
+		cutLossRaw := signalLow * 0.99
 		cutLossPrice := utils.RoundToFraction(cutLossRaw)
 
-		idealBuyMin := utils.RoundToFraction(ma20)
-		
-		idealBuyMaxRaw := ma20 + ((currentPrice - ma20) * 0.5)
-		if currentPrice <= ma20 {
-			idealBuyMaxRaw = currentPrice
-		}
-		idealBuyMax := utils.RoundToFraction(idealBuyMaxRaw)
+		// AREA BELI: Karena sudah konfirmasi, mepet harga sekarang (Buy On Close)
+		idealBuyMin := utils.RoundToFraction(currentPrice * 0.99)
+		idealBuyMax := utils.RoundToFraction(currentPrice)
 
 		lossPerLot := (currentPrice - cutLossPrice) * 100
 		if lossPerLot <= 0 {
@@ -96,30 +100,27 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 
 		maxLots := int(math.Min(maxLotsByRisk, maxLotsByCash))
 
-		// 3. Hitung Target Profit
-		tpMinPrice := utils.RoundToFraction(idealBuyMin * (1 + config.TPPercent))
-		tpMaxPrice := utils.RoundToFraction(idealBuyMax * (1 + config.TPPercent))
+		// 3. Hitung Target Profit (Hit & Run 4%)
+		tp1Price := utils.RoundToFraction(currentPrice * 1.04)
 
 		planText = fmt.Sprintf(`
 		━━━━━━━━━━━━━━━━━━
 		📐 **TRADING PLAN (Max %d LOT)**%s
-		📍 **Harga Saat Ini** : Rp %.0f
-		🧱 **Area MA20** : Rp %.0f
+		📍 **Harga Terkonfirmasi** : Rp %.0f
+		🧱 **Support Ekor (Low)** : Rp %.0f
 
-		🎯 **AREA BELI IDEAL : Rp %.0f - Rp %.0f**
-		_(Gunakan antrean Limit di fitur Auto Order!)_
+		🎯 **AREA BELI : Rp %.0f - Rp %.0f**
+		_(Sinyal Valid! Hajar Kanan sebagian sebelum market tutup)_
 
-		🚨 **Batas Cut Loss** : Rp %.0f (Jebol Support)
-		🚀 **Target Profit** : Rp %.0f - Rp %.0f
-		🛡️ **Trailing Stop** : %.1f%% (Aktifkan saat profit mantap)
+		🚨 **Batas Cut Loss** : Rp %.0f (Jebol Ekor Bawah)
+		🚀 **TP 1 (Jual 50%% Lot)** : Rp %.0f (Amankan Modal)
+		🛡️ **TP 2 (Sisa 50%%)** : Let It Ride (Trailing Stop 3%%)
 		━━━━━━━━━━━━━━━━━━
 
 		👉 Ketik /buy %s %.0f %d jika ingin eksekusi.`, 
-		maxLots, warningDefensif, currentPrice, ma20, 
+		maxLots, warningDefensif, currentPrice, signalLow, 
 		idealBuyMin, idealBuyMax, cutLossPrice, 
-		tpMinPrice, tpMaxPrice, 
-		(config.TrailingStopPercent * 100), 
-		symbol, currentPrice, maxLots)
+		tp1Price, symbol, currentPrice, maxLots)
 	} else {
 		planText = "\n\n_(Gagal menarik harga live untuk kalkulasi Position Sizing)_\n"
 	}
@@ -205,7 +206,6 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 			}
 
 			// 4. Jeda untuk menghindari Error 429 dari Google
-			// (Hanya berjalan jika loop masih akan berlanjut)
 			if len(finalCandidates) < targetSetups && aiCallCount < maxAICalls {
 				time.Sleep(30 * time.Second) // Gunakan 15 detik jika pakai API Key baru
 			}
@@ -214,7 +214,7 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 
 	// Jika setelah di-filter ternyata tidak ada satupun yang layak beli
 	if len(finalCandidates) == 0 {
-		pesanKosong := "📉 **TIDAK ADA SETUP BELI HARI INI**\n\nBerdasarkan filter teknikal dan validasi AI, saham-saham LQ45 saat ini sedang rawan pucuk, overextended, atau volumenya tidak mendukung (Bahaya).\n\n_Cash is King!_ Simpan pelurumu untuk hari esok. 👑"
+		pesanKosong := "📉 **TIDAK ADA SETUP BELI HARI INI**\n\nBerdasarkan filter teknikal dan validasi AI, tidak ada satupun saham yang memberikan sinyal pantulan / Hammer valid hari ini.\n\n_Cash is King!_ Simpan pelurumu untuk hari esok. 👑"
 		utils.SendMarkdownMessage(bot, pesanKosong)
 		return
 	}
@@ -230,7 +230,7 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 	// RANGKUM PESAN BALASAN
 	var sb strings.Builder
 	var topSymbols []string
-	sb.WriteString("💰 **TOP Saham Rekomendasi** 💰")
+	sb.WriteString("💰 **TOP Saham Rekomendasi (CONFIRMED BoW)** 💰")
 
 	count := 0
 	for _, res := range finalCandidates {
@@ -245,26 +245,27 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 		cleanAnalysis = strings.Replace(cleanAnalysis, "🔍", "", 1)
 		sb.WriteString(fmt.Sprintf("%s\n", strings.TrimSpace(cleanAnalysis)))
 
-		// --- KALKULATOR POSITION SIZING (VERSI BoW) ---
-		// Karena sudah di-filter (pasti BELI), kita langsung cetak Trading Plan
+		// --- KALKULATOR POSITION SIZING (VERSI CONFIRMED BoW) ---
 		currentPrice := market.GetLivePrice(res.Symbol)
 		if currentPrice == 0 {
 			currentPrice = market.GetGooglePrice(res.Symbol)
 		}
 
 		if currentPrice > 0 {
-			// LOGIKA BoW: Cut Loss ditaruh 2% di BAWAH MA20 (Support)
-			cutLossRaw := res.MA20 * 0.98
-			cutLossPrice := utils.RoundToFraction(cutLossRaw) // BULATKAN!
-
-			idealBuyMinRaw := res.MA20
-			idealBuyMin := utils.RoundToFraction(idealBuyMinRaw) // BULATKAN!
-
-			idealBuyMaxRaw := res.MA20 + ((currentPrice - res.MA20) * 0.5)
-			if currentPrice <= res.MA20 {
-				idealBuyMaxRaw = currentPrice
+			// Cari titik ekor bawah (Low) hari ini
+			hist, errHist := market.GetHistoricalPrices(res.Symbol)
+			signalLow := res.MA20 * 0.98 // Fallback
+			if errHist == nil && len(hist.Lows) > 0 {
+				signalLow = hist.Lows[len(hist.Lows)-1]
 			}
-			idealBuyMax := utils.RoundToFraction(idealBuyMaxRaw) // BULATKAN!
+
+			// LOGIKA CUT LOSS STRUKTURAL
+			cutLossRaw := signalLow * 0.99
+			cutLossPrice := utils.RoundToFraction(cutLossRaw) 
+
+			// AREA BELI: Mepet harga saat ini
+			idealBuyMin := utils.RoundToFraction(currentPrice * 0.99) 
+			idealBuyMax := utils.RoundToFraction(currentPrice) 
 
 			lossPerLot := (currentPrice - cutLossPrice) * 100
 			if lossPerLot <= 0 {
@@ -293,21 +294,24 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 			}
 
 			maxLots := int(math.Min(maxLotsByRisk, maxLotsByCash))
+			
+			// 3. Hitung Take Profit Hit & Run
+			tp1Price := utils.RoundToFraction(currentPrice * 1.04)
 
 			tradingPlanText := fmt.Sprintf(`
 			📐 **TRADING PLAN (Max %d LOT)**%s
 			━━━━━━━━━━━━━━━━━━
-			📍 **Harga Saat Ini** : Rp %.0f
-			🧱 **Area MA20** : Rp %.0f
+			📍 **Harga Terkonfirmasi** : Rp %.0f
+			🧱 **Support Ekor (Low)** : Rp %.0f
 
-			🎯 **AREA BELI IDEAL : Rp %.0f - Rp %.0f**
-			_(Gunakan antrean Limit di fitur Auto Order!)_
+			🎯 **AREA BELI : Rp %.0f - Rp %.0f**
+			_(Sinyal Valid! Hajar Kanan sebagian sebelum market tutup)_
 
-			🚨 **Batas Cut Loss** : Rp %.0f (Jebol Support)
-			🚀 **Target Profit** : Rp %.0f - Rp %.0f
-			🛡️ **Trailing Stop** : 2.5%% (Aktifkan saat profit mantap)
+			🚨 **Batas Cut Loss** : Rp %.0f (Jebol Ekor Bawah)
+			🚀 **TP 1 (Jual 50%% Lot)** : Rp %.0f (Amankan Modal)
+			🛡️ **TP 2 (Sisa 50%% Lot)** : Trailing Stop 3%%
 			━━━━━━━━━━━━━━━━━━
-			`, maxLots, warningDefensif, currentPrice, res.MA20, idealBuyMin, idealBuyMax, cutLossPrice, utils.RoundToFraction(idealBuyMin*(1+config.TPPercent)), utils.RoundToFraction(idealBuyMax*(1+config.TPPercent)))
+			`, maxLots, warningDefensif, currentPrice, signalLow, idealBuyMin, idealBuyMax, cutLossPrice, tp1Price)
 
 			sb.WriteString(tradingPlanText)
 		} else {
