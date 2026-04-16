@@ -15,7 +15,7 @@ import (
 
 func ProcessBuyCommand(bot *tgbotapi.BotAPI, args []string) {
 	if len(args) < 4 {
-		utils.SendSimpleMessage(bot, "❌ Format salah! Gunakan: `/buy [KODE] [HARGA] [LOT]`")
+		utils.SendSimpleMessage(bot, "❌ Format salah! Gunakan: `/buy [KODE] [HARGA] [LOT] [STRATEGI]`\nContoh: `/buy BBCA 9000 10 BoW`")
 		return
 	}
 
@@ -23,44 +23,96 @@ func ProcessBuyCommand(bot *tgbotapi.BotAPI, args []string) {
 	entry, _ := strconv.ParseFloat(args[2], 64)
 	lots, _ := strconv.Atoi(args[3])
 
-	// --- PERBAIKAN: Hitung dan BULATKAN batas TSL awal ---
-	initialTSLRaw := entry * (1 - config.TrailingStopPercent)
-	initialTSL := utils.RoundToFraction(initialTSLRaw)
-
-	plan := models.TradingPlan{
-		Symbol:       symbol,
-		EntryPrice:   entry,
-		TakeProfit:   utils.RoundToFraction(entry * (1 + config.TPPercent)), // BULATKAN!
-		CutLoss:      utils.RoundToFraction(entry * (1 - config.CLPercent)), // BULATKAN!
-		HighestPrice: entry, 
-		Lots:         lots,
-	}
-	config.MyStocks[symbol] = plan
-	storage.SaveData()
-
-	storage.LogTrade("BUY", symbol, entry, lots, 0.0, "Entry awal")
-
-	// Hitung modal asli yang terpotong di RDN (termasuk Fee Beli Bibit 0.15%)
-	totalModal := entry * float64(lots) * 100 * (1 + config.BuyFee)
-
-	response := fmt.Sprintf("✅ **%s BERHASIL DIBELI!**\n\n"+
-		"🛒 **Lot:** %d\n"+
-		"💸 **Modal Terpakai:** %s _(Termasuk Fee 0.15%%)_\n\n"+
-		"🎯 **Target Profit:** %s\n"+
-		"🛡️ **Trailing Stop Awal:** %s\n"+
-		"🩸 **Batas Cut Loss:** %s\n\n"+
-		"_Bot akan otomatis mengawal saham ini! 🚀_",
-		symbol, lots, utils.FormatRupiah(totalModal), 
-		utils.FormatRupiah(plan.TakeProfit), 
-		utils.FormatRupiah(func() float64 {
-			if initialTSL > plan.CutLoss {
-				return initialTSL
-			}
-			return plan.CutLoss
-		}()), // Pastikan TSL awal tidak lebih dalam dari Cut Loss
-		utils.FormatRupiah(plan.CutLoss))
+	// --- LOGIKA AVERAGING DOWN (SCALING IN) ---
+	if existingPlan, exists := config.MyStocks[symbol]; exists {
+		// 1. Hitung modal lama dan modal baru
+		totalOldCost := existingPlan.EntryPrice * float64(existingPlan.Lots)
+		totalNewCost := entry * float64(lots)
 		
-	utils.SendMarkdownMessage(bot, response)
+		// 2. Hitung harga rata-rata (Average Price) dan total Lot baru
+		newTotalLots := existingPlan.Lots + lots
+		newAveragePrice := (totalOldCost + totalNewCost) / float64(newTotalLots)
+
+		// 3. Update Plan yang sudah ada dengan harga Average
+		existingPlan.EntryPrice = newAveragePrice
+		existingPlan.Lots = newTotalLots
+		existingPlan.TakeProfit = utils.RoundToFraction(newAveragePrice * (1 + config.TPPercent))
+		existingPlan.CutLoss = utils.RoundToFraction(newAveragePrice * (1 - config.CLPercent))
+		existingPlan.HighestPrice = newAveragePrice // Reset agar Trailing Stop ikut dari awal lagi
+
+		config.MyStocks[symbol] = existingPlan
+		storage.SaveData()
+
+		storage.LogTrade("BUY", symbol, entry, lots, 0.0, "Averaging Down / Nyicil")
+
+		// Hitung TSL awal untuk pesan balasan (berdasarkan harga rata-rata baru)
+		initialTSLRaw := newAveragePrice * (1 - config.TrailingStopPercent)
+		initialTSL := utils.RoundToFraction(initialTSLRaw)
+		totalModalBaru := newAveragePrice * float64(newTotalLots) * 100 * (1 + config.BuyFee)
+
+		response := fmt.Sprintf("⚖️ **AVERAGE DOWN %s BERHASIL!**\n\n"+
+			"🛒 **Total Lot Sekarang:** %d\n"+
+			"🎯 **Harga Rata-rata Baru:** %s\n"+
+			"💸 **Total Modal Terpakai:** %s _(Termasuk Fee 0.15%%)_\n\n"+
+			"🚀 **Target Profit Baru:** %s\n"+
+			"🛡️ **Trailing Stop Awal:** %s\n"+
+			"🩸 **Batas Cut Loss Baru:** %s\n\n"+
+			"_Bot telah menyesuaikan batas pengawalan! 🚀_",
+			symbol, newTotalLots, 
+			utils.FormatRupiah(newAveragePrice), 
+			utils.FormatRupiah(totalModalBaru), 
+			utils.FormatRupiah(existingPlan.TakeProfit), 
+			utils.FormatRupiah(func() float64 {
+				if initialTSL > existingPlan.CutLoss {
+					return initialTSL
+				}
+				return existingPlan.CutLoss
+			}()), 
+			utils.FormatRupiah(existingPlan.CutLoss))
+			
+		utils.SendMarkdownMessage(bot, response)
+
+	} else {
+		// --- ENTRY AWAL (SAHAM BARU) ---
+		initialTSLRaw := entry * (1 - config.TrailingStopPercent)
+		initialTSL := utils.RoundToFraction(initialTSLRaw)
+
+		plan := models.TradingPlan{
+			Symbol:       symbol,
+			EntryPrice:   entry,
+			TakeProfit:   utils.RoundToFraction(entry * (1 + config.TPPercent)), // BULATKAN!
+			CutLoss:      utils.RoundToFraction(entry * (1 - config.CLPercent)), // BULATKAN!
+			HighestPrice: entry, 
+			Lots:         lots,
+		}
+		config.MyStocks[symbol] = plan
+		storage.SaveData()
+
+		storage.LogTrade("BUY", symbol, entry, lots, 0.0, "Entry awal")
+
+		// Hitung modal asli yang terpotong di RDN (termasuk Fee Beli Bibit 0.15%)
+		totalModal := entry * float64(lots) * 100 * (1 + config.BuyFee)
+
+		response := fmt.Sprintf("✅ **%s BERHASIL DIBELI!**\n\n"+
+			"🛒 **Lot:** %d\n"+
+			"💸 **Modal Terpakai:** %s _(Termasuk Fee 0.15%%)_\n\n"+
+			"🎯 **Target Profit:** %s\n"+
+			"🛡️ **Trailing Stop Awal:** %s\n"+
+			"🩸 **Batas Cut Loss:** %s\n\n"+
+			"_Bot akan otomatis mengawal saham ini! 🚀_",
+			symbol, lots, 
+			utils.FormatRupiah(totalModal), 
+			utils.FormatRupiah(plan.TakeProfit), 
+			utils.FormatRupiah(func() float64 {
+				if initialTSL > plan.CutLoss {
+					return initialTSL
+				}
+				return plan.CutLoss
+			}()), // Pastikan TSL awal tidak lebih dalam dari Cut Loss
+			utils.FormatRupiah(plan.CutLoss))
+			
+		utils.SendMarkdownMessage(bot, response)
+	}
 }
 
 // Logika /sell dengan fitur Pencatatan Otomatis (Auto-Logger) dan Harga Manual

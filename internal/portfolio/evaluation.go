@@ -27,8 +27,8 @@ func getPortfolioEvaluation(plan models.TradingPlan, currentPrice float64, newsC
 	}
 	defer client.Close()
 
-	// Gunakan versi 1.5-flash yang lebih stabil
 	model := client.GenerativeModel("gemini-flash-latest")
+	model.Temperature = genai.Ptr(float32(0.0)) // Bikin AI lebih logis, tidak berhalusinasi
 
 	// 1. Hitung Floating PNL
 	floatingPNL := utils.CalculateNetPNL(plan.EntryPrice, currentPrice, config.BuyFee, config.SellFee)
@@ -36,16 +36,24 @@ func getPortfolioEvaluation(plan models.TradingPlan, currentPrice float64, newsC
 	// 2. Hitung Batas TSL Saat Ini
 	tslLimit := plan.HighestPrice * (1 - config.TrailingStopPercent)
 
+	// --- LOGIKA BUNGLON UNTUK EVALUASI (ANTI-BIPOLAR) ---
+	strategyContext := ""
+	strategyContext = "1. **JANGAN PANIK KARENA MA5!** Saham ini sengaja dibeli saat harganya merah/turun ke area Support (MA20). Sangat wajar jika harga saat ini berada di bawah MA5.\n2. **FOKUS EVALUASI:** Apakah Support MA20 atau batas Cut Loss masih kuat menahan harga? Apakah volume jual sudah mengering? Jika iya, suruh HOLD (Aman) menunggu pantulan. Jangan suruh jual kecuali batas Cut Loss terancam jebol."
+
 	prompt := fmt.Sprintf(`
-		Bertindaklah sebagai Manajer Portofolio Saham Profesional dengan spesialisasi strategi FAST SWING TRADING (target hold 1-5 hari kerja).
-		Evaluasi posisi saham %s yang sedang saya pegang saat ini dari kacamata seorang Fast Swing Trader.
+		Bertindaklah sebagai Manajer Portofolio Saham Profesional dengan spesialisasi FAST SWING TRADING (hold 1-5 hari).
+		Evaluasi posisi saham %s yang sedang saya pegang saat ini.
 
 		[STATUS POSISI SAYA]
+		- Strategi Awal Beli: **%s**
 		- Harga Beli (Avg): Rp %.0f
 		- Harga Saat Ini: Rp %.0f (Floating: %.2f%%)
 		- Rekor Harga Pucuk: Rp %.0f
-		- Batas Trailing Stop (TSL): Rp %.0f (Batas aman pengunci profit / cut loss dinamis)
-		- Target Take Profit Awal: Rp %.0f
+		- Batas Trailing Stop (TSL): Rp %.0f (Batas kunci profit)
+		- Batas Cut Loss: Rp %.0f
+
+		⚠️ **ATURAN EVALUASI (WAJIB DIBACA!)** ⚠️
+		%s
 
 		[DATA FUNDAMENTAL & BERITA]
 		%s
@@ -53,21 +61,22 @@ func getPortfolioEvaluation(plan models.TradingPlan, currentPrice float64, newsC
 		[DATA TEKNIKAL]
 		%s
 
-		Sebagai Fast Swing Trader, fokuslah pada momentum JANGKA SANGAT PENDEK. Evaluasi apakah saham ini masih punya "bensin" untuk lanjut naik besok, atau momentumnya sudah hilang sehingga lebih baik bungkus profit/cut loss HARI INI JUGA sebelum menyentuh batas Trailing Stop.
-
 		WAJIB gunakan format persis seperti di bawah ini dengan Markdown:
 
 		🛡️ **Saham:** %s (Avg: Rp %.0f | Now: Rp %.0f)
 		💰 **Floating:** %.2f%%
-		🚦 **Tindakan:** [AMAN (Hold) / WASPADA (Siap Jual) / KUNCI PROFIT (Jual Sekarang) / BAHAYA (Cut Loss)]
+		🚦 **Tindakan:** [AMAN (Hold) / WASPADA (Siap Jual) / KUNCI PROFIT (Jual) / BAHAYA (Cut Loss)]
 		🎯 **Potensi Lanjut Naik:** [Tinggi / Sedang / Rendah]
 
 		📝 **Saran Strategi:**
-		[Berikan 2-3 kalimat tajam ala Fast Swing Trader. Evaluasi posisi harga saat ini terhadap batas TSL (Rp %.0f) dan MA5 (Momentum Harga Mingguan). Beritahu apakah lebih baik bungkus cuan sekarang atau tahan maksimal 1-2 hari lagi.]
+		[Berikan 2-3 kalimat tajam. Evaluasi posisi harga saat ini BUKAN SECARA UMUM, melainkan SESUAI DENGAN STRATEGI %s di atas. Sebutkan posisi harga terhadap batas Cut Loss atau TSL (Rp %.0f).]
 	`, 
-		plan.Symbol, plan.EntryPrice, currentPrice, floatingPNL, plan.HighestPrice, tslLimit, plan.TakeProfit, 
+		plan.Symbol, 
+		"BOW", plan.EntryPrice, currentPrice, floatingPNL, plan.HighestPrice, tslLimit, plan.CutLoss,
+		strategyContext,
 		newsContent, technicalContent, 
-		plan.Symbol, plan.EntryPrice, currentPrice, floatingPNL, tslLimit)
+		plan.Symbol, plan.EntryPrice, currentPrice, floatingPNL,
+		"BOW", tslLimit)
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
