@@ -82,6 +82,11 @@ func GetStockScore(symbol string) (float64, string, float64, float64) {
 	// ENTRY QUALITY SCORE & FILTER C-BoW
 	// =========================================================
 
+	// 🔥 FILTER TAMBAHAN: ANTI-PISAU JATUH (Hindari Saham ARB/Dump)
+	// Jika body candle kemarin turun > 10%, ini buang barang masif.
+	percentDropYesterday := ((yestClose - yestOpen) / yestOpen) * 100
+	isDumpedYesterday := percentDropYesterday <= -10.0
+
 	// 1. HIGH-QUALITY HAMMER FILTER
 	// Syarat ketat: Ekor bawah >= 2x Body DAN Close di 30% area puncak (bukan di tengah).
 	body := math.Abs(todayClose - todayOpen)
@@ -110,7 +115,12 @@ func GetStockScore(symbol string) (float64, string, float64, float64) {
 
 	// --- LOGIKA SKORING FINAL ---
 
-	if (isHammer || isGreenBounce) && isTooExtendedToday {
+	if isDumpedYesterday {
+		// BLOKIR TOTAL! Saham ini habis dibanting kemarin.
+		score = 0
+		verdict = "⛔ **KORBAN BANTINGAN (ANTI-ARB)**\nAlasan: Kemarin saham ini dibanting turun tajam (lebih dari -10%). Sangat berisiko menangkap pisau jatuh walaupun hari ini ada pantulan semu. Jangan disentuh!"
+
+	} else if (isHammer || isGreenBounce) && isTooExtendedToday {
 		// Sinyal valid, TAPI terlalu berisiko untuk masuk sore ini
 		score = 6 
 		verdict = fmt.Sprintf("🟠 **VALID TAPI RAWAN DISTRIBUSI (TELAT)**\nAlasan: Ada sinyal pantulan, TAPI harga sudah ditarik naik +%.2f%% dari titik terendahnya hari ini. Jangan paksakan Beli (Hajar Kanan) sore ini karena sangat rawan kena guyuran Take Profit (Exit Liquidity) besok pagi.", pumpFromLow)
