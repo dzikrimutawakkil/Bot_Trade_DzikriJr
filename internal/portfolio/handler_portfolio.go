@@ -115,11 +115,11 @@ func ProcessBuyCommand(bot *tgbotapi.BotAPI, args []string) {
 	}
 }
 
-// Logika /sell dengan fitur Pencatatan Otomatis (Auto-Logger) dan Harga Manual
+// Logika /sell dengan fitur Pencatatan Otomatis (Auto-Logger), Harga Manual, dan Partial Sell
 func ProcessSellCommand(bot *tgbotapi.BotAPI, args []string) {
-	// Format sekarang wajib pakai harga: /sell [KODE] [HARGA]
+	// Format: /sell [KODE] [HARGA] [OPSIONAL: LOT]
 	if len(args) < 3 {
-		utils.SendSimpleMessage(bot, "❌ Format salah! Gunakan: `/sell [KODE] [HARGA]`")
+		utils.SendSimpleMessage(bot, "❌ Format salah! Gunakan: `/sell [KODE] [HARGA] [LOT]`\nContoh jual sebagian: `/sell MTEL 555 5`\nContoh jual semua: `/sell MTEL 555`")
 		return
 	}
 	
@@ -132,12 +132,32 @@ func ProcessSellCommand(bot *tgbotapi.BotAPI, args []string) {
 	
 	if plan, ada := config.MyStocks[symbol]; ada {
 		
-		// 1. Hitung persentase cuan/rugi (netPNL) dengan harga manualmu
+		// 1. Tentukan jumlah lot yang mau dijual
+		sellLots := plan.Lots // Default: jual semua lot yang dimiliki
+		isPartial := false
+		
+		if len(args) >= 4 { // Jika user memasukkan argumen lot
+			parsedLots, err := strconv.Atoi(args[3])
+			if err != nil || parsedLots <= 0 {
+				utils.SendSimpleMessage(bot, "❌ Jumlah lot tidak valid!")
+				return
+			}
+			if parsedLots > plan.Lots {
+				utils.SendSimpleMessage(bot, fmt.Sprintf("❌ Lot tidak cukup! Kamu hanya punya %d lot %s.", plan.Lots, symbol))
+				return
+			}
+			sellLots = parsedLots
+			if sellLots < plan.Lots {
+				isPartial = true
+			}
+		}
+
+		// 2. Hitung persentase cuan/rugi (netPNL) per lembar saham
 		netPNL := utils.CalculateNetPNL(plan.EntryPrice, sellPrice, config.BuyFee, config.SellFee)
 
-		// 2. Hitung Rupiah Bersih (Cash flow sebenarnya di rekening)
-		totalPenjualan := sellPrice * float64(plan.Lots) * 100 * (1 - config.SellFee)
-		totalModal := plan.EntryPrice * float64(plan.Lots) * 100 * (1 + config.BuyFee)
+		// 3. Hitung Rupiah Bersih KHUSUS untuk lot yang dijual
+		totalPenjualan := sellPrice * float64(sellLots) * 100 * (1 - config.SellFee)
+		totalModal := plan.EntryPrice * float64(sellLots) * 100 * (1 + config.BuyFee)
 		rupiahPNL := totalPenjualan - totalModal
 
 		rupiahLabel := "Cuan Bersih"
@@ -145,35 +165,52 @@ func ProcessSellCommand(bot *tgbotapi.BotAPI, args []string) {
 		if rupiahPNL < 0 {
 			rupiahLabel = "Rugi Bersih"
 			statusEmoji = "🔴"
-			rupiahPNL = -rupiahPNL // Ubah ke positif untuk keperluan tampilan format Rupiah
+			rupiahPNL = -rupiahPNL // Ubah ke positif untuk tampilan format
 		}
 
-		// 3. Tentukan Catatan (Take Profit / Cut Loss / Manual)
+		// 4. Tentukan Catatan (TP/CL/Manual)
 		catatan := "Manual Sell"
 		if netPNL >= config.TPPercent*100 {
 			catatan = "Take Profit"
 		} else if netPNL <= -config.CLPercent*100 {
 			catatan = "Cut Loss"
 		}
+		if isPartial {
+			catatan += " (Partial)"
+		} else {
+			catatan += " (Clear)"
+		}
 
-		// 4. Catat ke dalam CSV sebelum datanya dihapus
-		storage.LogTrade("SELL", symbol, sellPrice, plan.Lots, netPNL, catatan)
+		// 5. Catat ke dalam CSV
+		storage.LogTrade("SELL", symbol, sellPrice, sellLots, netPNL, catatan)
 
-		// 5. Hapus pantauan portofolio dan simpan
-		delete(config.MyStocks, symbol)
+		// 6. Update Portofolio (Kurangi Lot atau Hapus)
+		sisaLot := plan.Lots - sellLots
+		if sisaLot == 0 {
+			delete(config.MyStocks, symbol) // Jual semua, hapus dari porto
+		} else {
+			plan.Lots = sisaLot
+			config.MyStocks[symbol] = plan // Jual sebagian, update sisa lot
+		}
 		storage.SaveData()
 		
-		// 6. Format Pesan Laporan Penjualan
+		// 7. Format Pesan Laporan Penjualan
+		statusPorto := "🗑️ *Posisi Ditutup (Clear)*"
+		if sisaLot > 0 {
+			statusPorto = fmt.Sprintf("💼 *Sisa di Porto:* %d Lot", sisaLot)
+		}
+
 		pesan := fmt.Sprintf("%s **%s BERHASIL DIJUAL!**\n\n"+
 			"🤝 **Harga Jual:** %s\n"+
-			"🛒 **Lot Terjual:** %d\n"+
-			"📊 **PNL Persentase:** **%.2f%%**\n"+
+			"🛒 **Terjual:** %d Lot\n"+
+			"📊 **PNL:** **%.2f%%**\n"+
 			"💰 **%s:** %s\n\n"+
-			"📝 _Tercatat di History sebagai: %s_", 
+			"%s\n"+
+			"📝 _Catatan: %s_", 
 			statusEmoji, symbol, 
-			utils.FormatRupiah(sellPrice), plan.Lots, 
+			utils.FormatRupiah(sellPrice), sellLots, 
 			netPNL, rupiahLabel, utils.FormatRupiah(rupiahPNL), 
-			catatan)
+			statusPorto, catatan)
 			
 		utils.SendMarkdownMessage(bot, pesan)
 		
