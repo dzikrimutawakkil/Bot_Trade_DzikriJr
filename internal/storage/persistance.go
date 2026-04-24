@@ -7,26 +7,27 @@ import (
 	"os"
 
 	"learn-go/internal/config"
-	"learn-go/internal/models" // Jangan lupa import models jika ActiveOrder ada di sana
+	"learn-go/internal/models"
 )
 
 const StorageFile = "stocks.json"
 
-// StorageData adalah pembungkus untuk menyimpan portofolio dan antrean sekaligus
 type StorageData struct {
 	MyStocks      map[string]models.TradingPlan `json:"my_stocks"`
 	PendingOrders map[string]models.ActiveOrder `json:"pending_orders"`
 }
 
-// SaveData menyimpan config.MyStocks dan config.PendingOrders ke dalam file JSON
+// SaveData menyimpan data ke JSON dengan pengaman Mutex
 func SaveData() {
-	// Masukkan kedua data ke dalam wadah pembungkus
+	// 🔒 [LOCK] Gunakan RLock (Read Lock) karena kita hanya ingin membaca data untuk di-marshal
+	config.DataMutex.RLock() 
 	dataToSave := StorageData{
 		MyStocks:      config.MyStocks,
 		PendingOrders: config.PendingOrders,
 	}
-
 	data, err := json.MarshalIndent(dataToSave, "", "  ")
+	config.DataMutex.RUnlock() // 🔓 [UNLOCK] Segera buka gembok setelah marshal selesai
+	
 	if err != nil {
 		log.Printf("❌ Gagal menukar data ke JSON: %v", err)
 		return
@@ -38,7 +39,7 @@ func SaveData() {
 	}
 }
 
-// LoadData membaca data dari file JSON saat bot baru dinyalakan
+// LoadData memuat data saat bot startup
 func LoadData() {
 	if _, err := os.Stat(StorageFile); os.IsNotExist(err) {
 		log.Println("ℹ️ File penyimpanan belum ada, memulai data baru.")
@@ -51,35 +52,33 @@ func LoadData() {
 		return
 	}
 
-	// 1. Coba decode menggunakan struktur baru (StorageData)
 	var storageData StorageData
 	err = json.Unmarshal(data, &storageData)
 	
 	if err == nil && (storageData.MyStocks != nil || storageData.PendingOrders != nil) {
-		// Jika berhasil pakai struktur baru
+		// 🔒 [LOCK] Gunakan Lock (Write Lock) karena kita akan mengubah isi variabel global
+		config.DataMutex.Lock() 
 		if storageData.MyStocks != nil {
 			config.MyStocks = storageData.MyStocks
 		}
 		if storageData.PendingOrders != nil {
 			config.PendingOrders = storageData.PendingOrders
 		}
-		log.Printf("✅ Berhasil memuat %d saham dan %d antrean dari penyimpanan.", len(config.MyStocks), len(config.PendingOrders))
+		config.DataMutex.Unlock() // 🔓 [UNLOCK]
+		
+		log.Printf("✅ Berhasil memuat %d saham dan %d antrean.", len(config.MyStocks), len(config.PendingOrders))
 		return
 	}
 
-	// 2. [BACKWARD COMPATIBILITY] Jika JSON masih menggunakan format lama (hanya MyStocks murni)
-	log.Println("🔄 Mendeteksi format JSON lama, mencoba migrasi...")
+	// Migrasi format lama (Backward Compatibility)
 	var oldFormat map[string]models.TradingPlan
 	errOld := json.Unmarshal(data, &oldFormat)
-	
 	if errOld == nil && oldFormat != nil {
+		config.DataMutex.Lock() // 🔒 [LOCK]
 		config.MyStocks = oldFormat
-		// PendingOrders dibiarkan kosong karena memang tidak ada di format lama
-		log.Printf("✅ Berhasil memuat %d saham dari format penyimpanan lama. Format baru akan terbentuk saat save berikutnya.", len(config.MyStocks))
+		config.DataMutex.Unlock() // 🔓 [UNLOCK] wajib dibuka sebelum panggil SaveData!
 		
-		// Langsung save agar file stocks.json ter-update ke struktur baru
-		SaveData() 
-	} else {
-		log.Printf("❌ Gagal decode JSON (File rusak atau format tidak dikenal): %v", err)
+		SaveData() // Simpan ulang ke format baru
+		log.Printf("✅ Migrasi format lama berhasil.")
 	}
 }

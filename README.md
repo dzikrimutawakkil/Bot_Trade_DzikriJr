@@ -26,6 +26,7 @@ Berevolusi dari bot pencatat biasa, DzikriJr kini menjadi **End-of-Day (EOD) Qua
 ### 📊 Laporan Rutin Otomatis (Cron Jobs)
 * 🕘 **08:45 WIB** → Evaluasi portofolio pagi oleh AI sebelum market buka (Evaluasi TSL & Cut Loss).
 * 🕛 **12:20 WIB** → Laporan Makan Siang (Lunch Summary PNL).
+* 🕛 **12:30 WIB** → Evaluasi portofolio pagi oleh AI sebelum market dilanjutkan (Evaluasi TSL & Cut Loss).
 * 🕓 **15:40 WIB** → **THE GOLDEN HOUR:** Eksekusi otomatis algoritma pencari saham untuk strategi BOC (*Buy on Close*).
 * 🕓 **16:20 WIB** → Laporan penutupan pasar.
 

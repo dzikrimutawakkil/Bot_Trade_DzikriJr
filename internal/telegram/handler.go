@@ -66,7 +66,7 @@ func HandleMessages(bot *tgbotapi.BotAPI) {
 			portfolio.ProcessStatusCommand(bot)
 			continue
 		case "/recommend", "❓ Recomend":
-			research.ProcessRecommendation(bot)
+			go research.ProcessRecommendation(bot)
 			continue
 		case "/reset":
 			portfolio.ProcessResetCommand(bot)
@@ -81,13 +81,13 @@ func HandleMessages(bot *tgbotapi.BotAPI) {
 		case "/sell":
 			portfolio.ProcessSellCommand(bot, args)
 		case "/research":
-			research.ProcessResearchCommand(bot, args)
+			go research.ProcessResearchCommand(bot, args)
 		case "/antre":
 			portfolio.ProcessAntreCommand(bot, args)
 		case "/cancel_antre":
 			portfolio.ProcessCancelAntreCommand(bot, args)
 		case "/evaluate":
-			portfolio.ProcessPortfolioEvaluation(bot)
+			go portfolio.ProcessPortfolioEvaluation(bot)
 		default:
 			utils.SendSimpleMessage(bot, "Gunakan perintah:\n`/buy [KODE] [HARGA] [LOT]`\n`/status` | `/recommend`")
 		}

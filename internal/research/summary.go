@@ -10,6 +10,7 @@ import (
 	
 	"learn-go/internal/market"
 	"learn-go/internal/config"
+	"learn-go/internal/models"
 	"learn-go/internal/utils"
 )
 
@@ -19,13 +20,9 @@ func RegisterCronJobs(bot *tgbotapi.BotAPI) {
 	jakartaTime, _ := time.LoadLocation("Asia/Jakarta")
 	c := cron.New(cron.WithLocation(jakartaTime))
 
-	// 1. Jadwal Laporan Makan Siang (Jam 12:00 WIB, Senin-Jumat)
-	_, err := c.AddFunc("20 12 * * 1-5", func() {
-		runDailySummary(bot, "Laporan Makan Siang Portofolio")
-	})
-
-	// 2. Jadwal Laporan Penutupan Pasar (Jam 16:00 WIB, Senin-Jumat)
-	_, err = c.AddFunc("20 16 * * 1-5", func() {
+	// HANYA 1 JADWAL: Laporan Penutupan Pasar (Jam 16:20 WIB, Senin-Jumat)
+	// Catatan: err menggunakan := karena ini sekarang inisialisasi pertama
+	_, err := c.AddFunc("20 16 * * 1-5", func() {
 		runDailySummary(bot, "Laporan Penutupan Pasar")
 	})
 
@@ -35,12 +32,20 @@ func RegisterCronJobs(bot *tgbotapi.BotAPI) {
 	}
 
 	c.Start()
-	fmt.Println("⏰ Cron Jobs untuk Summary (12:00 & 16:00) telah aktif!")
+	fmt.Println("⏰ Cron Jobs untuk Summary (16:20) telah aktif!")
 }
 
 // runDailySummary mengolah data portofolio menjadi pesan rangkuman
 func runDailySummary(bot *tgbotapi.BotAPI, title string) {
-	if len(config.MyStocks) == 0 {
+	// 🔒 [LOCK READ] Kunci dan Salin Map agar tidak crash saat membaca portofolio
+	config.DataMutex.RLock()
+	stocksCopy := make(map[string]models.TradingPlan)
+	for k, v := range config.MyStocks { 
+		stocksCopy[k] = v 
+	}
+	config.DataMutex.RUnlock()
+
+	if len(stocksCopy) == 0 {
 		return // Tidak kirim apa-apa jika portofolio kosong
 	}
 
@@ -49,13 +54,14 @@ func runDailySummary(bot *tgbotapi.BotAPI, title string) {
 	sb.WriteString(fmt.Sprintf("_%s_\n\n", time.Now().Format("Monday, 02 Jan 2006")))
 
 	var totalPNL float64
-	var sourceMarker string // 1. DEKLARASIKAN DI LUAR LOOP
+	var sourceMarker string 
 
-	for _, plan := range config.MyStocks {
+	// Loop menggunakan salinan Map (stocksCopy) yang sudah aman
+	for _, plan := range stocksCopy {
 		// Ambil harga real-time (Google) dengan fallback ke Yahoo
 		price := market.GetGooglePrice(plan.Symbol)
 		
-		sourceMarker = "Real-Time" // 2. GUNAKAN = (BUKAN :=)
+		sourceMarker = "Real-Time" 
 		if price == 0 {
 			price = market.GetLivePrice(plan.Symbol)
 			sourceMarker = "Kemungkinan Delay 15m"

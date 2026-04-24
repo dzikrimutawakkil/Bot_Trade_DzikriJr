@@ -122,7 +122,7 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 		idealBuyMin, idealBuyMax, cutLossPrice, 
 		tp1Price, symbol, currentPrice, maxLots)
 	} else {
-		planText = "\n\n_(Gagal menarik harga live untuk kalkulasi Position Sizing)_\n"
+		planText = "\n\n⚠️ **WARNING: DATA HARGA OFFLINE**\n_(Kalkulator Position Sizing tidak dapat ditampilkan karena bot gagal menarik harga real-time dari bursa saat ini. Silakan coba lagi nanti.)_\n"
 	}
 
 	// 5. Gabungkan Hasil AI dengan Kalkulator
