@@ -1,81 +1,89 @@
-# 🤖 Bot Trade DzikriJr (Asisten AI Fast Swing)
+# 🤖 Bot Trade DzikriJr (AI Quant & EOD Screener)
 
-**DzikriJr** adalah bot Telegram asisten *trading* saham pintar yang dibangun menggunakan **Golang** dan ditenagai oleh **Google Gemini AI**.
+**DzikriJr** adalah bot Telegram asisten *trading* saham cerdas yang dibangun menggunakan **Golang** dan ditenagai oleh **Google Gemini AI**. 
 
-Bot ini dirancang dengan arsitektur **Clean Code (Domain-Driven Design)** untuk mengeksekusi strategi **Fast Swing Trading (1–5 hari)** di Bursa Efek Indonesia (IHSG). Ia mencari peluang "Momentum dalam Tren Sehat" (harga sedang naik, momentum baru mulai, dan sedang istirahat di dekat titik pantul).
-
-Selain memberikan rekomendasi teknikal, bot ini juga bertindak sebagai **manajer portofolio pribadi** yang membantu menjaga psikologi *trader* melalui analisis otomatis dan perlindungan modal.
+Berevolusi dari bot pencatat biasa, DzikriJr kini menjadi **End-of-Day (EOD) Quant Screener** yang mengeksekusi strategi **Confirmed Buy on Weakness (C-BoW)**. Bot ini dirancang sebagai "Co-Pilot" untuk *Fast Swing Trading* (1-5 hari) yang fokus pada perlindungan modal, menyaring ratusan saham, dan memberikan *Trading Plan* matematis, sementara keputusan eksekusi final tetap berada di tangan pengguna ("The Human CEO").
 
 ---
 
 ## 🌟 Fitur Unggulan Terkini (Advanced)
 
-### 🧠 Deep AI Research & "The Hunter Algorithm"
-* **Scanning Pintar:** Menggunakan algoritma pemburu yang membatasi panggilan API AI maksimal 10 kali dan berhenti lebih awal jika sudah menemukan 3 setup "BELI" yang optimal.
-* **Analisis Sinergi:** Menggabungkan analisis fundamental (berita RSS Google News) dan indikator teknikal (MA5, MA20, Volume Kering) yang disintesis oleh Gemini AI.
+### 🧠 The Hunter Algorithm & Gemini AI
+* **C-BoW Technical Filter:** Pemindaian ketat menggunakan data *End-of-Day* (Yahoo Finance) untuk mencari pola *High-Quality Hammer* (ekor bawah 2x lipat body) dan *Strong Green Bounce* di area *support* MA20.
+* **Deep Fundamental Synthesis:** Menggabungkan berita RSS (Google News) dengan data teknikal, lalu dikirim ke AI Gemini untuk menghasilkan skor sentimen, analisis probabilitas, dan *trading plan* yang logis.
+* **Smart Rate-Limiting:** Membatasi pemanggilan API AI (maksimal 10x) dan berhenti otomatis setelah menemukan 3 setup terbaik untuk menghemat *resource*.
 
-### 🛡️ Market Filter & Manajemen Risiko
-* **IHSG Tracker:** Terus memantau arah pasar utama (^JKSE). Jika market sedang hancur (di bawah MA20), bot akan menyarankan "CASH IS KING" dan menolak memberikan rekomendasi beli agresif.
-* **Position Sizing Calculator:** Menghitung otomatis maksimal LOT yang boleh dibeli berdasarkan batas risiko 1% dari total modal, memastikan kerugian tidak pernah menguras saldo.
+### 🛡️ Pertahanan Modal (Capital Protection)
+* **Anti-Falling Knife (Anti-ARB):** Otomatis memblokir (skor 0) saham yang hari sebelumnya turun >10%, mencegah bot menangkap "pisau jatuh" di saham buangan bandar.
+* **Anti-Distribution Trap:** Mencegah pembelian pada saham yang sudah terpompa >3.5% dari titik terendahnya di hari yang sama untuk menghindari jebakan *Exit Liquidity*.
+* **Dynamic Position Sizing:** Menghitung otomatis maksimal lot yang boleh dibeli dengan membatasi risiko maksimal 1% dari total modal per transaksi.
 
-### ⏳ Sistem Antrean Otomatis (Auto-Match)
-* Memungkinkan kamu memasang jaring (limit order) via perintah `/antre`.
-* **Smart Monitoring:** Pemantau harga akan otomatis me-*match* pesanan jika harga market turun menyentuh harga antreanmu, lalu memindahkannya ke portofolio aktif lengkap dengan Trailing Stop yang langsung menyala.
-* **Runaway Price Alert:** Kalau harga saham malah kabur naik 3% meninggalkan antreanmu, bot akan menyuruhmu menarik antrean tersebut.
+### 💼 Advance Portfolio Management
+* **Averaging Down (Scaling In):** Otomatis menghitung ulang harga rata-rata (*Average Price*) dan mereset batas Cut Loss/Trailing Stop saat dilakukan pembelian tambahan pada saham yang sama.
+* **Partial Sell (Take Profit Parsial):** Mendukung penjualan sebagian lot (misal: TP1 jual 50% lot) dengan pencatatan akurat pada `trade_history.csv` dan kalkulasi *Realized PNL* yang dinamis.
+* **Smart Monitoring & Auto-Match:** Memantau antrean pembelian secara *background*. Jika harga pasar menyentuh harga antrean, bot otomatis memindahkan saham ke portofolio aktif dan menyalakan radar *Trailing Stop*.
 
 ### 📊 Laporan Rutin Otomatis (Cron Jobs)
-Bot mengirimkan laporan terjadwal:
-* 🕘 **08:45 WIB** → Evaluasi portofolio pagi oleh AI sebelum market buka.
-* 🕛 **12:20 WIB** → Rangkuman pergerakan market sesi 1 (Lunch Summary).
+* 🕘 **08:45 WIB** → Evaluasi portofolio pagi oleh AI sebelum market buka (Evaluasi TSL & Cut Loss).
+* 🕛 **12:20 WIB** → Laporan Makan Siang (Lunch Summary PNL).
+* 🕓 **15:40 WIB** → **THE GOLDEN HOUR:** Eksekusi otomatis algoritma pencari saham untuk strategi BOC (*Buy on Close*).
 * 🕓 **16:20 WIB** → Laporan penutupan pasar.
 
 ---
 
-## 🏗️ Struktur Proyek & Penyimpanan
+## 📈 Strategi Utama: Confirmed BoW (C-BoW) & Hit and Run
 
-Proyek ini menggunakan arsitektur berbasis fitur:
-* **`cmd/bot/main.go`**: Titik masuk (entry point) dan inisialisasi rutin Cron.
-* **Dual Storage (`storage`)**: Menyimpan histori riwayat trading dalam format `trade_history.csv` dan menjaga daftar portofolio aktif serta antrean dalam satu wadah di `stocks.json`.
-
----
-
-## 📈 Strategi Trading: Buy on Weakness (BoW)
-
-Sistem ini sangat disiplin dan anti-FOMO:
-* **Target Utama:** Mencari *entry* di dekat area *support* MA20 saat tekanan jual ritel mulai habis (volume kering).
-* **Risiko Terkunci:** Batas *Cut Loss* ditentukan secara *rigid*.
+Bot beroperasi dengan parameter perlindungan matematis:
+1. **Entry:** *Buy on Close* (BOC) pada pukul 15:45 setelah tervalidasi AI.
+2. **Cut Loss Struktural:** Diatur ketat pada 1% di bawah ujung ekor bawah (*Low*) dari *candlestick* konfirmasi.
+3. **Take Profit (Hit & Run):**
+   - **TP1 (Jual 50%):** Pada target +4% untuk mengamankan modal.
+   - **TP2 (Let it Ride):** Sisa 50% dijaga menggunakan *Trailing Stop Loss* (TSL) sebesar 3% dari rekor harga tertinggi (Pucuk).
 
 ---
 
 ## 💬 Perintah Telegram (Commands)
 
-| Perintah | Contoh Penggunaan | Deskripsi |
+| Perintah | Format / Contoh | Deskripsi |
 |---|---|---|
-| `/recommend` | `/recommend` | Menjalankan *Hunter Algorithm* untuk men-scan market. |
-| `/research` | `/research EXCL` | Analisis mendalam AI khusus untuk satu saham & posisi lot ideal. |
-| `/antre` | `/antre TOWR 482 10` | Memasang jaring otomatis untuk saham yang sedang diincar. |
-| `/cancel_antre`| `/cancel_antre TOWR`| Mencabut pantauan antrean dari memori bot. |
-| `/buy` | `/buy BRMS 150 5` | Memasukkan kepemilikan saham langsung ke portofolio aktif. |
-| `/sell` | `/sell BRMS 160` | Mencatat penjualan saham dan menyimpan log ke CSV. |
-| `/status` | `/status` | Menampilkan PNL bersih portofolio saat ini & selisih harga antrean aktif. |
-| `/evaluate` | `/evaluate` | Memaksa AI untuk mengevaluasi posisi (Hold/Sell) saham di portofolio. |
-| `/reset` | `/reset` | Mengosongkan paksa seluruh database portofoliomu. |
+| `/recommend` | `/recommend` | Menjalankan *Hunter Algorithm* untuk men-scan IHSG & Watchlist. |
+| `/research` | `/research MTEL` | Analisis mendalam AI + Kalkulator *Position Sizing* untuk saham spesifik. |
+| `/buy` | `/buy BBCA 9000 10` | Memasukkan saham ke portofolio aktif (atau *Averaging Down* jika sudah ada). |
+| `/sell` | `/sell BBCA 9500 5` | Mencatat penjualan saham. Bisa jual parsial (isi Lot) atau jual semua (kosongkan Lot). |
+| `/antre` | `/antre TOWR 480 10` | Memasang jaring/antrean. Akan masuk portofolio otomatis jika harga menyentuh. |
+| `/cancel_antre`| `/cancel_antre TOWR`| Mencabut pantauan antrean dari sistem. |
+| `/status` | `/status` | Menampilkan detail portofolio, Floating PNL, batas TSL/CL, dan status antrean aktif. |
+| `/evaluate` | `/evaluate` | AI memberikan saran *Hold/Cut/TP* atas seluruh portofolio berdasarkan kondisi *market* terbaru. |
+| `/reset` | `/reset` | Mengosongkan paksa database portofolio. |
 
 ---
 
-## 🚀 Cara Menjalankan
+## ⚠️ SOP Emas "The Human CEO" (Wajib Ditaati)
 
-1. Pastikan package terinstal:
+DzikriJr menggunakan data EOD (End of Day) Yahoo Finance yang buta terhadap **Foreign Flow** dan **Broker Summary**. Anda sebagai CEO **wajib** menambal titik buta ini dengan SOP eksekusi berikut:
+
+1. **Jam 15:40:** Bot mengirimkan 1-3 saham *Confirmed BoW* via Telegram.
+2. **Jam 15:45 (The Human Veto):** Buka aplikasi sekuritas Anda (Bibit/Stockbit/Ajaib). Validasi dua hal:
+   * **Live Chart:** Pastikan bentuk *candle* MASIH *Hammer* atau bertahan di *support* MA20.
+   * **Foreign Flow:** Cek data **F Buy vs F Sell**. Jika asing mendistribusikan barang besar-besaran (F Sell >> F Buy), **ABAIKAN REKOMENDASI BOT**.
+3. **Eksekusi:** Jika chart masih bagus dan asing netral/akumulasi ➡️ **Hajar Kanan (BOC)**.
+4. **Pasang Sabuk:** Keesokan paginya (08:50), masukkan angka *Cut Loss* dan *Take Profit* dari laporan bot ke fitur **Auto-Order** di aplikasi sekuritas. Tutup aplikasi dan fokus bekerja.
+
+---
+
+## 🚀 Instalasi & Konfigurasi
+
+1. Pastikan Anda menggunakan **Go 1.26+**.
+2. Clone repositori ini dan install dependencies:
   ```bash
    go mod tidy
   ```
-2. Setup token Telegram dan Gemini di file .env (atau langsung di config.go).
+3. Konfigurasikan token pada internal/config/utils.go atau .env:
+* BotToken: Token dari BotFather Telegram.
+* MyChatID: ID Telegram pribadi Anda (agar bot bersifat private).
+* GeminiAPIKey: API Key gratis dari Google AI Studio.
 
-3. Jalankan:
+4. Jalankan bot:
+  ``` Bash
+    go run cmd/bot/main.go
   ```
-  Bash
-  go run cmd/bot/main.go
-  ```
-
-⚠️ Disclaimer
-Bot ini murni alat bantu analisis komputasi, bukan penasihat keuangan. Segala kerugian dan risiko trading adalah tanggung jawab pengguna. Harap selalu jaga money management!
