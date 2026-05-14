@@ -11,105 +11,111 @@ import (
 	"learn-go/internal/config"
 	"learn-go/internal/utils"
 	"math"
+	"time"
 )
 
+// Pastikan kamu import "time" di bagian atas file ini!
+// import "time"
+
 func ProcessBuyCommand(bot *tgbotapi.BotAPI, args []string) {
-	if len(args) < 4 {
-		// 🔥 [FIX MINOR] Hapus kata [STRATEGI] agar tidak membingungkan
-		utils.SendSimpleMessage(bot, "❌ Format salah! Gunakan: `/buy [KODE] [HARGA] [LOT]`\nContoh: `/buy BBCA 9000 10`")
-		return
-	}
+    if len(args) < 4 {
+        utils.SendSimpleMessage(bot, "❌ Format salah! Gunakan: `/buy [KODE] [HARGA] [LOT]`\nContoh: `/buy BBCA 9000 10`")
+        return
+    }
 
-	symbol := strings.ToUpper(args[1])
-	entry, errPrice := strconv.ParseFloat(args[2], 64)
-	lots, errLot := strconv.Atoi(args[3])
+    symbol := strings.ToUpper(args[1])
+    entry, errPrice := strconv.ParseFloat(args[2], 64)
+    lots, errLot := strconv.Atoi(args[3])
 
-	if errPrice != nil || errLot != nil || entry <= 0 || lots <= 0 {
-		utils.SendSimpleMessage(bot, "❌ ERROR: Harga dan Lot harus berupa angka dan lebih besar dari 0!")
-		return
-	}
+    if errPrice != nil || errLot != nil || entry <= 0 || lots <= 0 {
+        utils.SendSimpleMessage(bot, "❌ ERROR: Harga dan Lot harus berupa angka dan lebih besar dari 0!")
+        return
+    }
 
-	// --- LOGIKA AVERAGING DOWN (SCALING IN) ---
-	// 🔒 [LOCK READ] Kita intip dulu apakah sahamnya ada
-	config.DataMutex.RLock()
-	existingPlan, exists := config.MyStocks[symbol]
-	config.DataMutex.RUnlock()
+    // --- LOGIKA AVERAGING DOWN (SCALING IN) ---
+    config.DataMutex.RLock()
+    existingPlan, exists := config.MyStocks[symbol]
+    config.DataMutex.RUnlock()
 
-	if exists {
-		totalOldCost := existingPlan.EntryPrice * float64(existingPlan.Lots)
-		totalNewCost := entry * float64(lots)
-		
-		newTotalLots := existingPlan.Lots + lots
-		newAveragePrice := (totalOldCost + totalNewCost) / float64(newTotalLots)
+    if exists {
+        totalOldCost := existingPlan.EntryPrice * float64(existingPlan.Lots)
+        totalNewCost := entry * float64(lots)
+        
+        newTotalLots := existingPlan.Lots + lots
+        newAveragePrice := (totalOldCost + totalNewCost) / float64(newTotalLots)
 
-		existingPlan.EntryPrice = newAveragePrice
-		existingPlan.Lots = newTotalLots
-		existingPlan.TakeProfit = utils.RoundToFraction(newAveragePrice * (1 + config.TPPercent))
-		existingPlan.CutLoss = utils.RoundToFraction(newAveragePrice * (1 - config.CLPercent))
-		existingPlan.HighestPrice = newAveragePrice
+        existingPlan.EntryPrice = newAveragePrice
+        existingPlan.Lots = newTotalLots
+        existingPlan.TakeProfit = utils.RoundToFraction(newAveragePrice * (1 + config.TPPercent))
+        existingPlan.CutLoss = utils.RoundToFraction(newAveragePrice * (1 - config.CLPercent))
+        existingPlan.HighestPrice = newAveragePrice
+        
+        // 🔄 UPDATE TANGGAL: Jika average down, anggap ini sebagai titik awal hold yang baru
+        existingPlan.BuyDate = time.Now().Format("2006-01-02") 
 
-		// 🔒 [LOCK WRITE] Waktunya menulis/mengubah data
-		config.DataMutex.Lock()
-		config.MyStocks[symbol] = existingPlan
-		config.DataMutex.Unlock() // 🔓 Buka gembok sebelum SaveData
+        config.DataMutex.Lock()
+        config.MyStocks[symbol] = existingPlan
+        config.DataMutex.Unlock()
 
-		storage.SaveData()
-		storage.LogTrade("BUY", symbol, entry, lots, 0.0, "Averaging Down / Nyicil")
+        storage.SaveData()
+        storage.LogTrade("BUY", symbol, entry, lots, 0.0, "Averaging Down / Nyicil")
 
-		initialTSLRaw := newAveragePrice * (1 - config.TrailingStopPercent)
-		initialTSL := utils.RoundToFraction(initialTSLRaw)
-		totalModalBaru := newAveragePrice * float64(newTotalLots) * 100 * (1 + config.BuyFee)
+        initialTSLRaw := newAveragePrice * (1 - config.TrailingStopPercent)
+        initialTSL := utils.RoundToFraction(initialTSLRaw)
+        totalModalBaru := newAveragePrice * float64(newTotalLots) * 100 * (1 + config.BuyFee)
 
-		response := fmt.Sprintf("⚖️ **AVERAGE DOWN %s BERHASIL!**\n\n"+
-			"🛒 **Total Lot Sekarang:** %d\n"+
-			"🎯 **Harga Rata-rata Baru:** %s\n"+
-			"💸 **Total Modal Terpakai:** %s _(Termasuk Fee 0.15%%)_\n\n"+
-			"🚀 **Target Profit Baru:** %s\n"+
-			"🛡️ **Trailing Stop Awal:** %s\n"+
-			"🩸 **Batas Cut Loss Baru:** %s\n\n"+
-			"_Bot telah menyesuaikan batas pengawalan! 🚀_",
-			symbol, newTotalLots, utils.FormatRupiah(newAveragePrice), utils.FormatRupiah(totalModalBaru), 
-			utils.FormatRupiah(existingPlan.TakeProfit), 
-			utils.FormatRupiah(math.Max(initialTSL, existingPlan.CutLoss)), utils.FormatRupiah(existingPlan.CutLoss))
-			
-		utils.SendMarkdownMessage(bot, response)
+        response := fmt.Sprintf("⚖️ **AVERAGE DOWN %s BERHASIL!**\n\n"+
+            "📅 **Tanggal Diperbarui:** %s\n"+ // <-- Tambahan visual di Telegram (opsional)
+            "🛒 **Total Lot Sekarang:** %d\n"+
+            "🎯 **Harga Rata-rata Baru:** %s\n"+
+            "💸 **Total Modal Terpakai:** %s _(Termasuk Fee 0.15%%)_\n\n"+
+            "🚀 **Target Profit Baru:** %s\n"+
+            "🛡️ **Trailing Stop Awal:** %s\n"+
+            "🩸 **Batas Cut Loss Baru:** %s\n\n"+
+            "_Bot telah menyesuaikan batas pengawalan! 🚀_",
+            symbol, existingPlan.BuyDate, newTotalLots, utils.FormatRupiah(newAveragePrice), utils.FormatRupiah(totalModalBaru), 
+            utils.FormatRupiah(existingPlan.TakeProfit), 
+            utils.FormatRupiah(math.Max(initialTSL, existingPlan.CutLoss)), utils.FormatRupiah(existingPlan.CutLoss))
+            
+        utils.SendMarkdownMessage(bot, response)
 
-	} else {
-		// --- ENTRY AWAL (SAHAM BARU) ---
-		initialTSLRaw := entry * (1 - config.TrailingStopPercent)
-		initialTSL := utils.RoundToFraction(initialTSLRaw)
+    } else {
+        // --- ENTRY AWAL (SAHAM BARU) ---
+        initialTSLRaw := entry * (1 - config.TrailingStopPercent)
+        initialTSL := utils.RoundToFraction(initialTSLRaw)
 
-		plan := models.TradingPlan{
-			Symbol:       symbol,
-			EntryPrice:   entry,
-			TakeProfit:   utils.RoundToFraction(entry * (1 + config.TPPercent)),
-			CutLoss:      utils.RoundToFraction(entry * (1 - config.CLPercent)),
-			HighestPrice: entry, 
-			Lots:         lots,
-		}
+        plan := models.TradingPlan{
+            Symbol:       symbol,
+            EntryPrice:   entry,
+            TakeProfit:   utils.RoundToFraction(entry * (1 + config.TPPercent)),
+            CutLoss:      utils.RoundToFraction(entry * (1 - config.CLPercent)),
+            HighestPrice: entry, 
+            Lots:         lots,
+            BuyDate:      time.Now().Format("2006-01-02"),
+        }
 
-		// 🔒 [LOCK WRITE] Menulis saham baru
-		config.DataMutex.Lock()
-		config.MyStocks[symbol] = plan
-		config.DataMutex.Unlock() // 🔓 Buka gembok
+        config.DataMutex.Lock()
+        config.MyStocks[symbol] = plan
+        config.DataMutex.Unlock()
 
-		storage.SaveData()
-		storage.LogTrade("BUY", symbol, entry, lots, 0.0, "Entry awal")
+        storage.SaveData()
+        storage.LogTrade("BUY", symbol, entry, lots, 0.0, "Entry awal")
 
-		totalModal := entry * float64(lots) * 100 * (1 + config.BuyFee)
+        totalModal := entry * float64(lots) * 100 * (1 + config.BuyFee)
 
-		response := fmt.Sprintf("✅ **%s BERHASIL DIBELI!**\n\n"+
-			"🛒 **Lot:** %d\n"+
-			"💸 **Modal Terpakai:** %s _(Termasuk Fee 0.15%%)_\n\n"+
-			"🎯 **Target Profit:** %s\n"+
-			"🛡️ **Trailing Stop Awal:** %s\n"+
-			"🩸 **Batas Cut Loss:** %s\n\n"+
-			"_Bot akan otomatis mengawal saham ini! 🚀_",
-			symbol, lots, utils.FormatRupiah(totalModal), utils.FormatRupiah(plan.TakeProfit), 
-			utils.FormatRupiah(math.Max(initialTSL, plan.CutLoss)), utils.FormatRupiah(plan.CutLoss))
-			
-		utils.SendMarkdownMessage(bot, response)
-	}
+        response := fmt.Sprintf("✅ **%s BERHASIL DIBELI!**\n\n"+
+            "📅 **Tanggal Beli:** %s\n"+ // <-- Tambahan visual di Telegram (opsional)
+            "🛒 **Lot:** %d\n"+
+            "💸 **Modal Terpakai:** %s _(Termasuk Fee 0.15%%)_\n\n"+
+            "🎯 **Target Profit:** %s\n"+
+            "🛡️ **Trailing Stop Awal:** %s\n"+
+            "🩸 **Batas Cut Loss:** %s\n\n"+
+            "_Bot akan otomatis mengawal saham ini! 🚀_",
+            symbol, plan.BuyDate, lots, utils.FormatRupiah(totalModal), utils.FormatRupiah(plan.TakeProfit), 
+            utils.FormatRupiah(math.Max(initialTSL, plan.CutLoss)), utils.FormatRupiah(plan.CutLoss))
+            
+        utils.SendMarkdownMessage(bot, response)
+    }
 }
 
 func ProcessSellCommand(bot *tgbotapi.BotAPI, args []string) {

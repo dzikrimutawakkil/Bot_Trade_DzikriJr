@@ -42,6 +42,7 @@ type TradingPlan struct {
 	HighestPrice float64
 	Lots         int
 	LastNotified time.Time
+	BuyDate      string
 }
 
 // HistoricalData sekarang menyimpan array OHLC utuh

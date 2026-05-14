@@ -12,7 +12,6 @@ vendor/
 # Configuration & Secrets (Sangat Penting!)
 # Jangan biarkan token Telegram kamu bocor
 .env
-config.go
 secrets.go
 trade_history.csv
 
@@ -29,3 +28,6 @@ stocks.json
 Thumbs.db
 desktop.ini
 .DS_Store
+.claude
+CLAUDE.md
+claude-cheat-sheet.md

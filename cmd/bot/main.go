@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/robfig/cron/v3"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
@@ -16,6 +17,14 @@ import (
 )
 
 func main() {
+	// Load environment variables dari .env file SEBELUM inisialisasi lain
+	err := godotenv.Load()
+	if err != nil {
+		log.Printf("Warning: Tidak dapat load .env file (file mungkin tidak ada): %v", err)
+	} else {
+		log.Println("Environment variables berhasil dimuat dari .env")
+	}
+
 	storage.LoadData()  // Load portfolio awal
 
 	bot, err := tgbotapi.NewBotAPI(config.BotToken)
