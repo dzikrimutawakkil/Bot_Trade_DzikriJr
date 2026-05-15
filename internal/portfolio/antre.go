@@ -32,12 +32,14 @@ func ProcessAntreCommand(bot *tgbotapi.BotAPI, args []string) {
 		return
 	}
 
-	// Simpan ke memori bot
+	// Simpan ke memori bot (dengan mutex untuk thread safety)
+	config.DataMutex.Lock()
 	config.PendingOrders[symbol] = models.ActiveOrder{
 		Symbol:     symbol,
 		OrderPrice: orderPrice,
 		Lot:        lots, // Menyimpan jumlah lot
 	}
+	config.DataMutex.Unlock()
 
 	// WAJIB: Simpan ke file JSON agar antrean tidak hilang saat bot direstart
 	storage.SaveData()
@@ -58,13 +60,18 @@ func ProcessCancelAntreCommand(bot *tgbotapi.BotAPI, args []string) {
 	}
 
 	symbol := strings.ToUpper(args[1])
-	if _, exists := config.PendingOrders[symbol]; exists {
+
+	config.DataMutex.Lock()
+	_, exists := config.PendingOrders[symbol]
+	if exists {
 		// Hapus dari memori
 		delete(config.PendingOrders, symbol)
-		
+	}
+	config.DataMutex.Unlock()
+
+	if exists {
 		// WAJIB: Simpan perubahan ke JSON agar benar-benar terhapus permanen
 		storage.SaveData()
-
 		utils.SendSimpleMessage(bot, fmt.Sprintf("🗑️ Pantauan antrean **%s** telah dicabut dari sistem.", symbol))
 	} else {
 		utils.SendSimpleMessage(bot, fmt.Sprintf("⚠️ Tidak ada antrean aktif untuk **%s**.", symbol))

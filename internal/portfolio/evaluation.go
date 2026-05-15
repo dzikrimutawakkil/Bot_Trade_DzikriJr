@@ -133,7 +133,10 @@ func ProcessPortfolioEvaluation(bot *tgbotapi.BotAPI) {
 
 		newsContent, err := research.FetchNewsRSS(symbol)
 		if err != nil { newsContent = "Tidak ada berita terbaru." }
-		technicalContent := research.FetchTechnicalData(symbol)
+		technicalContent, errTech := research.FetchTechnicalData(symbol)
+		if errTech != nil {
+			technicalContent = "Tidak ada data teknikal terbaru."
+		}
 
 		eval, err := getPortfolioEvaluation(plan, currentPrice, newsContent, technicalContent, chartIcon)
 		if err != nil {

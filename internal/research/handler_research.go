@@ -33,7 +33,11 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 	}
 
 	// 2. Fetch Teknikal untuk AI & Ambil Angka MA20
-	technicalData := FetchTechnicalData(symbol)
+	technicalData, errTech := FetchTechnicalData(symbol)
+	if errTech != nil {
+		utils.SendSimpleMessage(bot, fmt.Sprintf("❌ Gagal mengambil data teknikal untuk %s.", symbol))
+		return
+	}
 	_, _, _, ma20 := GetStockScore(symbol) // <-- AMBIL MA20 UNTUK LOGIKA BoW
 
 	// 3. Analisis AI Gemini
@@ -183,7 +187,7 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 
 			// 1. Tanya AI (Deep Research)
 			news, _ := FetchNewsRSS(res.Symbol)
-			tech := FetchTechnicalData(res.Symbol)
+			tech, _ := FetchTechnicalData(res.Symbol)
 			analysis, err := GetDeepAnalysis(res.Symbol, news, tech)
 			aiCallCount++
 

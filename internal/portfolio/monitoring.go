@@ -12,6 +12,7 @@ import (
 	"learn-go/internal/utils"
 	"learn-go/internal/models"
 )
+
 func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 	ticker := time.NewTicker(config.CheckPeriod)
 	log.Println("📡 Monitor harga (Dual-Check) aktif dengan Trailing Stop & Order Match...")
@@ -24,20 +25,35 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 		// ==========================================
 		// 1. PANTAU PORTOFOLIO AKTIF (MyStocks)
 		// ==========================================
-		for symbol, plan := range config.MyStocks {
+		config.DataMutex.RLock()
+		stockSnapshot := make(map[string]models.TradingPlan)
+		for sym, plan := range config.MyStocks {
+			stockSnapshot[sym] = plan
+		}
+		config.DataMutex.RUnlock()
+
+		for symbol, plan := range stockSnapshot {
 			yahooPrice := market.GetLivePrice(symbol)
 			if yahooPrice == 0 {
 				continue
 			}
 
 			// --- UPDATE HIGHEST PRICE ---
+			needsWrite := false
 			if plan.HighestPrice == 0 {
 				plan.HighestPrice = plan.EntryPrice
+				needsWrite = true
 			}
 
 			if yahooPrice > plan.HighestPrice {
 				plan.HighestPrice = yahooPrice
+				needsWrite = true
+			}
+
+			if needsWrite {
+				config.DataMutex.Lock()
 				config.MyStocks[symbol] = plan
+				config.DataMutex.Unlock()
 				storage.SaveData()
 			}
 
@@ -94,7 +110,9 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 					}
 					utils.SendMarkdownMessage(bot, msg)
 					plan.LastNotified = time.Now()
+					config.DataMutex.Lock()
 					config.MyStocks[symbol] = plan
+					config.DataMutex.Unlock()
 					storage.SaveData()
 				}
 			}
@@ -103,7 +121,14 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 		// ==========================================
 		// 2. PANTAU ANTREAN BARU (PendingOrders)
 		// ==========================================
-		for symbol, order := range config.PendingOrders {
+		config.DataMutex.RLock()
+		orderSnapshot := make(map[string]models.ActiveOrder)
+		for sym, order := range config.PendingOrders {
+			orderSnapshot[sym] = order
+		}
+		config.DataMutex.RUnlock()
+
+		for symbol, order := range orderSnapshot {
 			currentPrice := market.GetLivePrice(symbol)
 			if currentPrice == 0 {
 				continue
@@ -114,10 +139,16 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 			if currentPrice <= order.OrderPrice {
 
 				// Langsung hapus dari antrean agar tidak tereksekusi dua kali
+				config.DataMutex.Lock()
 				delete(config.PendingOrders, symbol)
+				config.DataMutex.Unlock()
 
 				// --- CEK APAKAH SUDAH PUNYA SAHAMNYA (AVERAGING DOWN) ---
-				if existingPlan, exists := config.MyStocks[symbol]; exists {
+				config.DataMutex.RLock()
+				existingPlan, exists := config.MyStocks[symbol]
+				config.DataMutex.RUnlock()
+
+				if exists {
 					// 1. Hitung total modal lama dan baru
 					totalOldCost := existingPlan.EntryPrice * float64(existingPlan.Lots)
 					totalNewCost := order.OrderPrice * float64(order.Lot)
@@ -133,7 +164,9 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 					existingPlan.CutLoss = utils.RoundToFraction(newAveragePrice * (1 - config.CLPercent))
 					existingPlan.HighestPrice = newAveragePrice // Reset
 
+					config.DataMutex.Lock()
 					config.MyStocks[symbol] = existingPlan
+					config.DataMutex.Unlock()
 					storage.LogTrade("BUY", symbol, order.OrderPrice, order.Lot, 0.0, "Auto-Match (Averaging Down)")
 					storage.SaveData()
 
@@ -160,8 +193,10 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 						TakeProfit:   utils.RoundToFraction(order.OrderPrice * (1 + config.TPPercent)),
 						CutLoss:      utils.RoundToFraction(order.OrderPrice * (1 - config.CLPercent)),
 					}
-					
+
+					config.DataMutex.Lock()
 					config.MyStocks[symbol] = plan
+					config.DataMutex.Unlock()
 					storage.LogTrade("BUY", symbol, order.OrderPrice, order.Lot, 0.0, "Auto-Match dari Antrean")
 					storage.SaveData()
 
@@ -196,7 +231,9 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 					utils.SendMarkdownMessage(bot, msg)
 
 					order.LastNotified = time.Now()
+					config.DataMutex.Lock()
 					config.PendingOrders[symbol] = order
+					config.DataMutex.Unlock()
 				}
 			}
 		}

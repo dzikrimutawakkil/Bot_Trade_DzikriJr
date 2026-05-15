@@ -25,7 +25,7 @@ func FetchNewsRSS(symbol string) (string, error) {
 
 	feed, err := fp.ParseURL(url)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("gagal fetch RSS untuk %s: %w", symbol, err)
 	}
 
 	var newsList []string
@@ -38,7 +38,7 @@ func FetchNewsRSS(symbol string) (string, error) {
 	return strings.Join(newsList, "\n"), nil
 }
 
-func FetchTechnicalData(symbol string) string {
+func FetchTechnicalData(symbol string) (string, error) {
 	// Panggil API Yahoo Chart (1 bulan terakhir, interval harian)
 	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s.JK?interval=1d&range=1mo", symbol)
 	req, _ := http.NewRequest("GET", url, nil)
@@ -47,17 +47,22 @@ func FetchTechnicalData(symbol string) string {
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "Data teknikal gagal diambil."
+		return "", fmt.Errorf("gagal mengambil data teknikal untuk %s: %w", symbol, err)
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
-	// Asumsi struct struct YahooChart sudah disesuaikan
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("gagal membaca response body untuk %s: %w", symbol, err)
+	}
+
 	var data models.YahooChartResponse
-	json.Unmarshal(body, &data)
+	if err := json.Unmarshal(body, &data); err != nil {
+		return "", fmt.Errorf("gagal parsing JSON response untuk %s: %w", symbol, err)
+	}
 
 	if len(data.Chart.Result) == 0 || len(data.Chart.Result[0].Indicators.Quote) == 0 {
-		return "Data teknikal tidak ditemukan di bursa."
+		return "", fmt.Errorf("data teknikal tidak ditemukan di bursa untuk %s", symbol)
 	}
 
 	closes := data.Chart.Result[0].Indicators.Quote[0].Close
@@ -77,7 +82,7 @@ func FetchTechnicalData(symbol string) string {
 	}
 
 	if len(validCloses) < 20 || len(validVolumes) < 20 {
-		return "Data historis kurang dari 20 hari, indikator tidak valid."
+		return "", fmt.Errorf("data historis kurang dari 20 hari untuk %s, indikator tidak valid", symbol)
 	}
 
 	// 1. Hitung MA20 (Harga)
@@ -141,7 +146,7 @@ func FetchTechnicalData(symbol string) string {
 	report := fmt.Sprintf("Harga Terakhir: Rp %.0f\nMA5 (Tren Pendek): Rp %.0f\nMA20 (Support Utama): Rp %.0f\nJarak ke MA20: +%.2f%%\nStatus Setup: %s\nStatus Volume: %s\nHarga 5 Hari Terakhir: %s",
 		currentPrice, ma5, ma20, jarakKeMA20, statusBoW, statusVolume, strings.Join(trendStr, " -> "))
 
-	return report
+	return report, nil
 }
 
 // Fungsi AI yang sudah di-UPGRADE (Menerima input Teknikal)
