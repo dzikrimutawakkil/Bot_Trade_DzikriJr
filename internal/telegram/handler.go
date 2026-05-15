@@ -7,6 +7,7 @@ import (
 	"learn-go/internal/config"
 	"learn-go/internal/portfolio"
 	"learn-go/internal/research"
+	"learn-go/internal/storage"
 	"learn-go/internal/utils"
 )
 
@@ -88,8 +89,27 @@ func HandleMessages(bot *tgbotapi.BotAPI) {
 			portfolio.ProcessCancelAntreCommand(bot, args)
 		case "/evaluate":
 			go portfolio.ProcessPortfolioEvaluation(bot)
+		case "/stats":
+			ProcessStatsCommand(bot)
 		default:
 			utils.SendSimpleMessage(bot, "Gunakan perintah:\n`/buy [KODE] [HARGA] [LOT]`\n`/status` | `/recommend`")
 		}
 	}
+}
+
+// ProcessStatsCommand menampilkan statistik trading ke Telegram
+func ProcessStatsCommand(bot *tgbotapi.BotAPI) {
+	stats, err := storage.CalculateStatistics()
+	if err != nil {
+		utils.SendSimpleMessage(bot, "❌ Gagal menghitung statistik: "+err.Error())
+		return
+	}
+
+	if stats.TotalTrades == 0 {
+		utils.SendSimpleMessage(bot, "📊Belum ada data trading untuk dianalisa.\nMulai trading dulu, Bos!")
+		return
+	}
+
+	message := storage.FormatStatsMessage(stats)
+	utils.SendMarkdownMessage(bot, message)
 }

@@ -13,9 +13,9 @@ import (
 	"github.com/google/generative-ai-go/genai"
 	"github.com/mmcdole/gofeed"
 	"google.golang.org/api/option"
-    
-    "learn-go/internal/config"
-    "learn-go/internal/models"
+
+	"learn-go/internal/config"
+	"learn-go/internal/models"
 )
 
 // Fungsi untuk ambil berita terbaru via RSS Google News (Fundamental)
@@ -42,7 +42,7 @@ func FetchTechnicalData(symbol string) string {
 	// Panggil API Yahoo Chart (1 bulan terakhir, interval harian)
 	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s.JK?interval=1d&range=1mo", symbol)
 	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Add("User-Agent", "Mozilla/5.0") 
+	req.Header.Add("User-Agent", "Mozilla/5.0")
 
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
@@ -68,7 +68,7 @@ func FetchTechnicalData(symbol string) string {
 
 	// Filter data kosong (hari libur) dan sinkronkan harga dengan volume
 	for i, c := range closes {
-		if c > 0 { 
+		if c > 0 {
 			validCloses = append(validCloses, c)
 			if i < len(volumes) {
 				validVolumes = append(validVolumes, volumes[i])
@@ -107,7 +107,7 @@ func FetchTechnicalData(symbol string) string {
 
 	// 3. LOGIKA BARU: Analisis Volume untuk Buy on Weakness
 	statusVolume := "✅ VOLUME NORMAL"
-	if currentVol > (avgVol20 * 1.5) { 
+	if currentVol > (avgVol20 * 1.5) {
 		// Dulu ini bagus, sekarang ini bahaya (rawan distribusi pucuk)
 		statusVolume = "🔥 LONJAKAN VOLUME (Waspada Puncak Distribusi / Guyuran)"
 	} else if currentVol < (avgVol20 * 0.7) {
@@ -146,20 +146,27 @@ func FetchTechnicalData(symbol string) string {
 
 // Fungsi AI yang sudah di-UPGRADE (Menerima input Teknikal)
 func GetDeepAnalysis(symbol string, newsContent string, technicalContent string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
+	const maxAttempts = 3
 
-	client, err := genai.NewClient(ctx, option.WithAPIKey(config.GeminiAPIKey))
-	if err != nil {
-		return "", err
-	}
-	defer client.Close()
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
 
-	model := client.GenerativeModel("gemini-flash-latest")
-	model.Temperature = genai.Ptr(float32(0.0))
-	log.Printf("[AI] Mengirim data BERITA dan TEKNIKAL %s ke Gemini...", symbol)
+		client, err := genai.NewClient(ctx, option.WithAPIKey(config.GeminiAPIKey))
+		if err != nil {
+			log.Printf("[Gemini] Attempt %d/%d gagal init client untuk %s: %v", attempt, maxAttempts, symbol, err)
+			if attempt < maxAttempts {
+				time.Sleep(time.Duration(1<<(attempt-1)) * time.Second)
+			}
+			continue
+		}
+		defer client.Close()
 
-	prompt := fmt.Sprintf(`
+		model := client.GenerativeModel("gemini-flash-latest")
+		model.Temperature = genai.Ptr(float32(0.0))
+		log.Printf("[AI] Mengirim data BERITA dan TEKNIKAL %s ke Gemini... (attempt %d/%d)", symbol, attempt, maxAttempts)
+
+		prompt := fmt.Sprintf(`
 		Bertindaklah sebagai Analis Saham Profesional khusus **FAST SWING (Hold 1-5 Hari)** dengan strategi **BUY ON WEAKNESS (BoW) / Contrarian**.
 		Analisis saham %s berdasarkan data berikut:
 
@@ -171,7 +178,7 @@ func GetDeepAnalysis(symbol string, newsContent string, technicalContent string)
 
 		⚠️ **ATURAN TRADING (WAJIB DIIKUTI!)** ⚠️
 		1. **STRATEGI UTAMA (BoW):** Rekomendasikan BELI HANYA JIKA "Status Setup" adalah "🟢 SETUP BUY ON WEAKNESS" (harga terkoreksi mendekati MA20) DAN volume menunjukkan "📉 VOLUME KERING". Ini berarti tekanan jual ritel sudah habis.
-		2. **HINDARI PUCUK FOMO:** Jika "Status Setup" menunjukkan "🔴 RAWAN PUCUK" atau ada "🔥 LONJAKAN VOLUME" setelah harga naik berhari-hari, rekomendasikan JUAL/TAHAN. Itu adalah jebakan distribusi bandar (Sell on News).
+		2. **HINDARI PUCUK FOMO:** Jika "Status Setup" menunjukkan "🔴 RAWAN PUCUK" atau ada "🔥 LONJAKAN VOLUME" setelah harga naik berhari-hari, rekomendasikan JUAL/TAHAN. Itu adalah jebakan distribusi bandit (Sell on News).
 		3. **HARAM MENGAMBIL PISAU JATUH:** Jika statusnya "💀 PISAU JATUH", WAJIB rekomendasikan HINDARI.
 
 		WAJIB gunakan format persis seperti di bawah ini. Gunakan pemformatan Markdown:
@@ -194,20 +201,29 @@ func GetDeepAnalysis(symbol string, newsContent string, technicalContent string)
 		_Alasan: [Satu kalimat solid fokus pada risiko (Risk/Reward) dan jarak harga terhadap garis MA20]_
 	`, symbol, newsContent, technicalContent)
 
-	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
-	if err != nil {
-		log.Printf("[AI] Gagal dapat respon: %v", err)
-		return "", err
-	}
-	log.Printf("[AI] Respon berhasil diterima!")
-
-	if len(resp.Candidates) > 0 {
-		var sb strings.Builder
-		for _, part := range resp.Candidates[0].Content.Parts {
-			sb.WriteString(fmt.Sprintf("%v", part))
+		resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+		if err != nil {
+			log.Printf("[AI] Attempt %d/%d gagal untuk %s: %v", attempt, maxAttempts, symbol, err)
+			if attempt < maxAttempts {
+				time.Sleep(time.Duration(1<<(attempt-1)) * time.Second)
+			}
+			continue
 		}
-		return sb.String(), nil
+		log.Printf("[AI] Respon berhasil diterima!")
+
+		if len(resp.Candidates) > 0 {
+			var sb strings.Builder
+			for _, part := range resp.Candidates[0].Content.Parts {
+				sb.WriteString(fmt.Sprintf("%v", part))
+			}
+			return sb.String(), nil
+		}
+
+		return "AI terdiam tanpa kata.", nil
 	}
 
-	return "AI terdiam tanpa kata.", nil
+	// Semua attempt gagal
+	errAllFailed := fmt.Errorf("[Gemini] semua %d attempt gagal untuk %s", maxAttempts, symbol)
+	log.Printf("[AI] FATAL: %v", errAllFailed)
+	return "", errAllFailed
 }

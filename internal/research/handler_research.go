@@ -39,7 +39,7 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 	// 3. Analisis AI Gemini
 	analysis, err := GetDeepAnalysis(symbol, news, technicalData)
 	if err != nil {
-		utils.SendSimpleMessage(bot, "❌ Gagal melakukan analisis AI.")
+		utils.SendSimpleMessage(bot, fmt.Sprintf("⚠️ Gagal mengambil analisis untuk %s.\nCoba lagi nanti atau hubungi admin.", symbol))
 		return
 	}
 
@@ -202,7 +202,7 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 					}
 				}
 			} else {
-				fmt.Printf("⚠️ Gagal mendapat AI untuk %s: %v\n", res.Symbol, err)
+				utils.SendSimpleMessage(bot, fmt.Sprintf("⚠️ Gagal mengambil analisis untuk %s. Coba lagi nanti.", res.Symbol))
 			}
 
 			// 4. Jeda untuk menghindari Error 429 dari Google

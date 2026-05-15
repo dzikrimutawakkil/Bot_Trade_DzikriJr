@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
+
 	"learn-go/internal/models"
 )
 
@@ -62,33 +64,72 @@ func GetLivePrice(symbol string) float64 {
 
 func GetHistoricalPrices(symbol string) (models.HistoricalData, error) {
 	ticker := symbol
-	if !strings.HasSuffix(symbol, ".JK") && !strings.HasPrefix(symbol, "^") { 
-		ticker = symbol + ".JK" 
+	if !strings.HasSuffix(symbol, ".JK") && !strings.HasPrefix(symbol, "^") {
+		ticker = symbol + ".JK"
 	}
 
 	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?range=3mo&interval=1d", ticker)
 
-	client := &http.Client{}
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0")
+	const maxAttempts = 3
+	var lastErr error
 
-	resp, err := client.Do(req)
-	if err != nil { return models.HistoricalData{}, err }
-	defer resp.Body.Close()
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		client := &http.Client{}
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0")
 
-	var data models.YahooChartResponse 
-	json.NewDecoder(resp.Body).Decode(&data)
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			log.Printf("[Yahoo] Attempt %d/%d gagal koneksi untuk %s: %v", attempt, maxAttempts, symbol, err)
+			if attempt < maxAttempts {
+				sleepSec := 1 << (attempt - 1) // 1s, 2s, 4s
+				time.Sleep(time.Duration(sleepSec) * time.Second)
+			}
+			continue
+		}
+		defer resp.Body.Close()
 
-	if len(data.Chart.Result) > 0 && len(data.Chart.Result[0].Indicators.Quote) > 0 {
-		quote := data.Chart.Result[0].Indicators.Quote[0]
-		return models.HistoricalData{
-			Opens:   quote.Open,
-			Highs:   quote.High,
-			Lows:    quote.Low,
-			Prices:  quote.Close,
-			Volumes: quote.Volume,
-			Symbol:  symbol,
-		}, nil
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("status code %d", resp.StatusCode)
+			log.Printf("[Yahoo] Attempt %d/%d gagal untuk %s: HTTP %d", attempt, maxAttempts, symbol, resp.StatusCode)
+			if attempt < maxAttempts {
+				sleepSec := 1 << (attempt - 1)
+				time.Sleep(time.Duration(sleepSec) * time.Second)
+			}
+			continue
+		}
+
+		var data models.YahooChartResponse
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			lastErr = err
+			log.Printf("[Yahoo] Attempt %d/%d gagal decode untuk %s: %v", attempt, maxAttempts, symbol, err)
+			if attempt < maxAttempts {
+				sleepSec := 1 << (attempt - 1)
+				time.Sleep(time.Duration(sleepSec) * time.Second)
+			}
+			continue
+		}
+
+		if len(data.Chart.Result) > 0 && len(data.Chart.Result[0].Indicators.Quote) > 0 {
+			quote := data.Chart.Result[0].Indicators.Quote[0]
+			return models.HistoricalData{
+				Opens:   quote.Open,
+				Highs:   quote.High,
+				Lows:    quote.Low,
+				Prices:  quote.Close,
+				Volumes: quote.Volume,
+				Symbol:  symbol,
+			}, nil
+		}
+
+		lastErr = fmt.Errorf("data kosong")
+		log.Printf("[Yahoo] Attempt %d/%d gagal untuk %s: data kosong", attempt, maxAttempts, symbol)
+		if attempt < maxAttempts {
+			sleepSec := 1 << (attempt - 1)
+			time.Sleep(time.Duration(sleepSec) * time.Second)
+		}
 	}
-	return models.HistoricalData{}, fmt.Errorf("data kosong")
+
+	return models.HistoricalData{}, fmt.Errorf("[Yahoo] semua attempt gagal untuk %s: %v", symbol, lastErr)
 }

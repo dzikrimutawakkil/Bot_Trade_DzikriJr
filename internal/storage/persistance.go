@@ -19,15 +19,15 @@ type StorageData struct {
 
 // SaveData menyimpan data ke JSON dengan pengaman Mutex
 func SaveData() {
-	// 🔒 [LOCK] Gunakan RLock (Read Lock) karena kita hanya ingin membaca data untuk di-marshal
-	config.DataMutex.RLock() 
+	// 🔒 [LOCK] Gunakan Lock (Write Lock) karena kita MENULIS ke file
+	config.DataMutex.Lock()
+	defer config.DataMutex.Unlock()
+
 	dataToSave := StorageData{
 		MyStocks:      config.MyStocks,
 		PendingOrders: config.PendingOrders,
 	}
 	data, err := json.MarshalIndent(dataToSave, "", "  ")
-	config.DataMutex.RUnlock() // 🔓 [UNLOCK] Segera buka gembok setelah marshal selesai
-	
 	if err != nil {
 		log.Printf("❌ Gagal menukar data ke JSON: %v", err)
 		return
@@ -54,10 +54,10 @@ func LoadData() {
 
 	var storageData StorageData
 	err = json.Unmarshal(data, &storageData)
-	
+
 	if err == nil && (storageData.MyStocks != nil || storageData.PendingOrders != nil) {
 		// 🔒 [LOCK] Gunakan Lock (Write Lock) karena kita akan mengubah isi variabel global
-		config.DataMutex.Lock() 
+		config.DataMutex.Lock()
 		if storageData.MyStocks != nil {
 			config.MyStocks = storageData.MyStocks
 		}
@@ -65,7 +65,7 @@ func LoadData() {
 			config.PendingOrders = storageData.PendingOrders
 		}
 		config.DataMutex.Unlock() // 🔓 [UNLOCK]
-		
+
 		log.Printf("✅ Berhasil memuat %d saham dan %d antrean.", len(config.MyStocks), len(config.PendingOrders))
 		return
 	}
@@ -77,7 +77,7 @@ func LoadData() {
 		config.DataMutex.Lock() // 🔒 [LOCK]
 		config.MyStocks = oldFormat
 		config.DataMutex.Unlock() // 🔓 [UNLOCK] wajib dibuka sebelum panggil SaveData!
-		
+
 		SaveData() // Simpan ulang ke format baru
 		log.Printf("✅ Migrasi format lama berhasil.")
 	}
