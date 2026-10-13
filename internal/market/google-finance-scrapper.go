@@ -2,12 +2,12 @@ package market
 
 import (
 	"fmt"
+	"github.com/PuerkitoBio/goquery"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-	"log"
-	"github.com/PuerkitoBio/goquery"
 )
 
 func GetGooglePrice(symbol string) float64 {
@@ -36,7 +36,6 @@ func GetGooglePrice(symbol string) float64 {
 
 	priceStr := ""
 
-	// Trik 1: Cari elemen yang punya atribut 'data-last-price' (Paling Akurat)
 	doc.Find("[data-last-price]").Each(func(i int, s *goquery.Selection) {
 		val, exists := s.Attr("data-last-price")
 		if exists && priceStr == "" {
@@ -44,7 +43,6 @@ func GetGooglePrice(symbol string) float64 {
 		}
 	})
 
-	// Trik 2: Kalau Trik 1 gagal, cari class umum lainnya (fxKbKc atau YMl77)
 	if priceStr == "" {
 		doc.Find(".fxKbKc, .YMl77").Each(func(i int, s *goquery.Selection) {
 			if priceStr == "" {
@@ -53,14 +51,13 @@ func GetGooglePrice(symbol string) float64 {
 		})
 	}
 
-	// Clean up: Hapus Rp, titik, koma, dsb
 	priceStr = strings.ReplaceAll(priceStr, "Rp", "")
 	priceStr = strings.ReplaceAll(priceStr, ".", "")
 	priceStr = strings.ReplaceAll(priceStr, ",", "")
 	priceStr = strings.TrimSpace(priceStr)
 
 	price, _ := strconv.ParseFloat(priceStr, 64)
-	
+
 	if price == 0 {
 		log.Printf("⚠️ Google Scraper gagal dapet angka buat %s", symbol)
 	}

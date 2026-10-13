@@ -2,6 +2,16 @@ package models
 
 import "time"
 
+// Bar merepresentasikan satu candlestick OHLCV.
+type Bar struct {
+	Time   time.Time
+	Open   float64
+	High   float64
+	Low    float64
+	Close  float64
+	Volume float64
+}
+
 // Struktur JSON untuk endpoint /v8/finance/chart
 type YahooChartResponse struct {
 	Chart struct {
@@ -10,6 +20,7 @@ type YahooChartResponse struct {
 				RegularMarketPrice float64 `json:"regularMarketPrice"`
 				PreviousClose      float64 `json:"previousClose"`
 			} `json:"meta"`
+			Timestamp  []int64 `json:"timestamp"`
 			Indicators struct {
 				Quote []struct {
 					Open   []float64 `json:"open"`
@@ -43,6 +54,7 @@ type TradingPlan struct {
 	Lots         int
 	LastNotified time.Time
 	BuyDate      string
+	TP1Done      bool
 }
 
 // HistoricalData sekarang menyimpan array OHLC utuh

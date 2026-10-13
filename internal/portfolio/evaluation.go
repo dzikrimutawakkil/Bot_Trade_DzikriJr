@@ -10,37 +10,41 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
+
 	"learn-go/internal/config"
-	"learn-go/internal/models"
-	"learn-go/internal/utils"
-	"learn-go/internal/research"
 	"learn-go/internal/market"
+	"learn-go/internal/models"
+	"learn-go/internal/research"
+	"learn-go/internal/rules"
+	"learn-go/internal/utils"
 )
 
-// getPortfolioEvaluation sekarang menerima chartIcon untuk menggantikan emoji kantong uang
 func getPortfolioEvaluation(plan models.TradingPlan, currentPrice float64, newsContent string, technicalContent string, chartIcon string) (string, error) {
-    ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
-    client, err := genai.NewClient(ctx, option.WithAPIKey(config.GeminiAPIKey))
-    if err != nil {
-        return "", err
-    }
-    defer client.Close()
+	client, err := genai.NewClient(ctx, option.WithAPIKey(config.GeminiAPIKey))
+	if err != nil {
+		return "", err
+	}
+	defer client.Close()
 
-    model := client.GenerativeModel("gemini-flash-latest")
-    model.Temperature = genai.Ptr(float32(0.0))
+	model := client.GenerativeModel(config.GeminiModel)
+	model.Temperature = genai.Ptr(float32(0.0))
+	log.Printf("[AI] Evaluasi portofolio %s (model=%s)", plan.Symbol, config.GeminiModel)
 
-    // 1. Hitung Floating PNL Persentase
-    floatingPNL := utils.CalculateNetPNL(plan.EntryPrice, currentPrice, config.BuyFee, config.SellFee)
+	floatingPNL := rules.Default.NetPNL(plan.EntryPrice, currentPrice)
 
-    // 2. Hitung Batas TSL Saat Ini
-    tslLimit := plan.HighestPrice * (1 - config.TrailingStopPercent)
+	tslDisplay := rules.Default.EffectiveStop(plan)
+	tslActive := rules.Default.TrailingActive(plan)
+	tslLabel := fmt.Sprintf("Rp %.0f", tslDisplay)
+	if !tslActive {
+		tslLabel = "belum aktif"
+	}
 
-    // 3. Konteks Strategi yang Diperbarui (TERMASUK WAKTU & TARGET)
-    strategyContext := "1. **JANGAN PANIK KARENA MA5!** Saham ini sengaja dibeli saat harganya merah/turun ke area Support (MA20).\n2. **FOKUS EVALUASI:** Apakah Support MA20 atau batas Cut Loss masih kuat menahan harga? Jika iya, suruh HOLD (Aman) menunggu pantulan.\n3. **TARGET FAST SWING:** Target profit adalah +4% hingga +7% dalam 1-5 hari bursa. Berikan saran terkait pencapaian target ini berdasarkan waktu beli."
+	strategyContext := "1. **JANGAN PANIK KARENA MA5!** Saham ini sengaja dibeli saat harganya merah/turun ke area Support (MA20).\n2. **FOKUS EVALUASI:** Apakah Support MA20 atau batas Cut Loss masih kuat menahan harga? Jika iya, suruh HOLD (Aman) menunggu pantulan.\n3. **TARGET FAST SWING:** Target profit adalah +4%% hingga +7%% dalam 1-5 hari bursa. Berikan saran terkait pencapaian target ini berdasarkan waktu beli."
 
-    prompt := fmt.Sprintf(`
+	prompt := fmt.Sprintf(`
         Bertindaklah sebagai Manajer Portofolio Saham Profesional khusus FAST SWING TRADING.
         Evaluasi posisi saham %s.
 
@@ -49,7 +53,7 @@ func getPortfolioEvaluation(plan models.TradingPlan, currentPrice float64, newsC
         - Harga Beli (Avg): Rp %.0f
         - Harga Saat Ini: Rp %.0f (Floating: %.2f%%)
         - Rekor Harga Pucuk: Rp %.0f
-        - Batas Trailing Stop (TSL): Rp %.0f
+        - Batas Trailing Stop (TSL): %s
         - Batas Cut Loss: Rp %.0f
 
         ⚠️ **ATURAN EVALUASI** ⚠️
@@ -69,40 +73,40 @@ func getPortfolioEvaluation(plan models.TradingPlan, currentPrice float64, newsC
         🎯 **Potensi Lanjut Naik:** [Tinggi / Sedang / Rendah]
 
         📝 **Saran Strategi:**
-        [Berikan 2-3 kalimat tajam sesuai strategi BOW. Sebutkan posisi harga terhadap batas CL atau TSL (Rp %.0f). Evaluasi juga apakah pergerakan harga sejalan dengan target waktu 1-5 hari dan target profit +4%%.]
+        [Berikan 2-3 kalimat tajam sesuai strategi BOW. Sebutkan posisi harga terhadap batas CL atau TSL (%s). Evaluasi juga apakah pergerakan harga sejalan dengan target waktu 1-5 hari dan target profit +4%%.]
     `,
-        plan.Symbol, plan.BuyDate, plan.EntryPrice, currentPrice, floatingPNL, plan.HighestPrice, tslLimit, plan.CutLoss,
-        strategyContext, newsContent, technicalContent,
-        plan.Symbol, plan.EntryPrice, currentPrice, chartIcon, floatingPNL,
-        tslLimit)
+		plan.Symbol, plan.BuyDate, plan.EntryPrice, currentPrice, floatingPNL, plan.HighestPrice, tslLabel, plan.CutLoss,
+		strategyContext, newsContent, technicalContent,
+		plan.Symbol, plan.EntryPrice, currentPrice, chartIcon, floatingPNL,
+		tslLabel)
 
-    resp, err := model.GenerateContent(ctx, genai.Text(prompt))
-    if err != nil {
-        return "", err
-    }
+	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	if err != nil {
+		return "", err
+	}
 
-    if len(resp.Candidates) > 0 {
-        var sb strings.Builder
-        for _, part := range resp.Candidates[0].Content.Parts {
-            sb.WriteString(fmt.Sprintf("%v", part))
-        }
-        return sb.String(), nil
-    }
+	if len(resp.Candidates) > 0 {
+		var sb strings.Builder
+		for _, part := range resp.Candidates[0].Content.Parts {
+			sb.WriteString(fmt.Sprintf("%v", part))
+		}
+		return sb.String(), nil
+	}
 
-    return "AI tidak memberikan respon evaluasi.", nil
+	return "AI tidak memberikan respon evaluasi.", nil
 }
 
 func ProcessPortfolioEvaluation(bot *tgbotapi.BotAPI) {
-	// 🔒 [LOCK READ] Gunakan gembok untuk menyalin data portofolio
 	config.DataMutex.RLock()
 	if len(config.MyStocks) == 0 {
 		config.DataMutex.RUnlock()
 		log.Println("Portofolio kosong, skip evaluasi harian.")
 		return
 	}
-	// Copy map agar tidak bentrok saat proses AI yang lama
 	stocksToEval := make(map[string]models.TradingPlan)
-	for k, v := range config.MyStocks { stocksToEval[k] = v }
+	for k, v := range config.MyStocks {
+		stocksToEval[k] = v
+	}
 	config.DataMutex.RUnlock()
 
 	utils.SendSimpleMessage(bot, "🔄 _Menyiapkan Rapat: Evaluasi Portofolio & Keuangan..._")
@@ -112,46 +116,47 @@ func ProcessPortfolioEvaluation(bot *tgbotapi.BotAPI) {
 
 	var totalPNLRupiah float64
 
-	for symbol, plan := range stocksToEval {
-		currentPrice := market.GetLivePrice(symbol)
+	for _, plan := range stocksToEval {
+		currentPrice := market.GetLivePrice(plan.Symbol)
 		if currentPrice == 0 {
-			currentPrice = market.GetGooglePrice(symbol)
-			if currentPrice == 0 { currentPrice = plan.EntryPrice }
+			currentPrice = market.GetGooglePrice(plan.Symbol)
+			if currentPrice == 0 {
+				currentPrice = plan.EntryPrice
+			}
 		}
 
-		// 1. Hitung PNL Rupiah Bersih (Sesuai Logika Status)
-		totalBuyValue := plan.EntryPrice * (1 + config.BuyFee) * float64(plan.Lots) * 100
-		totalSellValue := currentPrice * (1 - config.SellFee) * float64(plan.Lots) * 100
+		totalBuyValue := plan.EntryPrice * (1 + rules.Default.BuyFee) * float64(plan.Lots) * 100
+		totalSellValue := currentPrice * (1 - rules.Default.SellFee) * float64(plan.Lots) * 100
 		pnlRupiah := totalSellValue - totalBuyValue
 		totalPNLRupiah += pnlRupiah
 
-		// 2. Tentukan Icon Chart berdasarkan pergerakan harga
 		chartIcon := "📈"
 		if currentPrice < plan.EntryPrice {
 			chartIcon = "📉"
 		}
 
-		newsContent, err := research.FetchNewsRSS(symbol)
-		if err != nil { newsContent = "Tidak ada berita terbaru." }
-		technicalContent, errTech := research.FetchTechnicalData(symbol)
+		newsContent, err := research.FetchNewsRSS(plan.Symbol)
+		if err != nil {
+			newsContent = "Tidak ada berita terbaru."
+		}
+		technicalContent, errTech := research.FetchTechnicalData(plan.Symbol)
 		if errTech != nil {
 			technicalContent = "Tidak ada data teknikal terbaru."
 		}
 
 		eval, err := getPortfolioEvaluation(plan, currentPrice, newsContent, technicalContent, chartIcon)
 		if err != nil {
-			log.Println("❌ Gagal evaluasi", symbol, ":", err)
-			finalReport.WriteString(fmt.Sprintf("⚠️ **%s**: Gagal mendapatkan AI.\n\n", symbol))
+			log.Println("❌ Gagal evaluasi", plan.Symbol, ":", err)
+			finalReport.WriteString(fmt.Sprintf("⚠️ **%s**: Gagal mendapatkan AI.\n\n", plan.Symbol))
 			continue
 		}
 
 		finalReport.WriteString(eval)
 		finalReport.WriteString("\n━━━━━━━━━━━━━━━━━━━━\n\n")
-		
-		time.Sleep(3 * time.Second) // Jeda API
+
+		time.Sleep(3 * time.Second)
 	}
 
-	// 📊 TAMBAHKAN RINGKASAN TOTAL DI BAWAH (Seperti Fitur Status)
 	totalEmoji := "📈"
 	pnlLabel := "Cuan Bersih"
 	if totalPNLRupiah < 0 {

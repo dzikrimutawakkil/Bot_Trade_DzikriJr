@@ -7,6 +7,7 @@ import (
 	"learn-go/internal/config"
 	"learn-go/internal/portfolio"
 	"learn-go/internal/research"
+	"learn-go/internal/shadow"
 	"learn-go/internal/storage"
 	"learn-go/internal/utils"
 )
@@ -17,7 +18,6 @@ func HandleMessages(bot *tgbotapi.BotAPI) {
 	updates := bot.GetUpdatesChan(u)
 
 	for update := range updates {
-		// --- 1. LOGIKA UNTUK KLIK TOMBOL INLINE (Berita) ---
 		if update.CallbackQuery != nil {
 			if update.CallbackQuery.From.ID != config.MyChatID {
 				continue
@@ -32,7 +32,6 @@ func HandleMessages(bot *tgbotapi.BotAPI) {
 			continue
 		}
 
-		// --- 2. LOGIKA UNTUK PESAN TEKS & TOMBOL KEYBOARD ---
 		if update.Message == nil || update.Message.From.ID != config.MyChatID {
 			continue
 		}
@@ -46,35 +45,29 @@ func HandleMessages(bot *tgbotapi.BotAPI) {
 		// Cek teks UTUH terlebih dahulu (Untuk tombol keyboard)
 		switch text {
 		case "/start", "/menu":
-			// --- FITUR BARU: Memunculkan kembali Keyboard Menu ---
 			msg := tgbotapi.NewMessage(config.MyChatID, "🤖 DzikriJr siap membantu, Bos! Silakan pilih menu di bawah ini 👇")
-			
-			// Rakit deretan tombol keyboard
+
 			keyboard := tgbotapi.NewReplyKeyboard(
 				tgbotapi.NewKeyboardButtonRow(
 					tgbotapi.NewKeyboardButton("📊 Status"),
 					tgbotapi.NewKeyboardButton("❓ Recomend"),
 				),
 			)
-			// Atur agar ukurannya menyesuaikan layar HP
-			keyboard.ResizeKeyboard = true 
-			
+			keyboard.ResizeKeyboard = true
+
 			msg.ReplyMarkup = keyboard
 			bot.Send(msg)
 			continue
-			
+
 		case "/status", "📊 Status":
 			portfolio.ProcessStatusCommand(bot)
 			continue
 		case "/recommend", "❓ Recomend":
 			go research.ProcessRecommendation(bot)
 			continue
-		case "/reset":
-			portfolio.ProcessResetCommand(bot)
-			continue
 		}
 
-		// Jika bukan tombol, cek perintah yang memakai argumen (/buy, /sell, /research)
+		// Perintah dengan argumen
 		command := strings.ToLower(args[0])
 		switch command {
 		case "/buy":
@@ -91,6 +84,14 @@ func HandleMessages(bot *tgbotapi.BotAPI) {
 			go portfolio.ProcessPortfolioEvaluation(bot)
 		case "/stats":
 			ProcessStatsCommand(bot)
+		case "/reset":
+			if len(args) >= 2 && strings.ToLower(args[1]) == "confirm" {
+				portfolio.ProcessResetCommand(bot, true)
+			} else {
+				portfolio.ProcessResetCommand(bot, false)
+			}
+		case "/shadow":
+			ProcessShadowCommand(bot)
 		default:
 			utils.SendSimpleMessage(bot, "Gunakan perintah:\n`/buy [KODE] [HARGA] [LOT]`\n`/status` | `/recommend`")
 		}
@@ -112,4 +113,21 @@ func ProcessStatsCommand(bot *tgbotapi.BotAPI) {
 
 	message := storage.FormatStatsMessage(stats)
 	utils.SendMarkdownMessage(bot, message)
+}
+
+// ProcessShadowCommand menampilkan ringkasan shadow log sinyal.
+func ProcessShadowCommand(bot *tgbotapi.BotAPI) {
+	rows, err := shadow.LoadRows()
+	if err != nil {
+		utils.SendSimpleMessage(bot, "❌ Gagal memuat data shadow log: "+err.Error())
+		return
+	}
+	if rows == nil {
+		utils.SendSimpleMessage(bot, "📊 Shadow log masih kosong. Coba lagi setelah market tutup.")
+		return
+	}
+
+	sum := shadow.Summarize(rows)
+	msg := sum.Format()
+	utils.SendMarkdownMessage(bot, msg)
 }

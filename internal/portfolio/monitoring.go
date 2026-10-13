@@ -8,9 +8,10 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"learn-go/internal/config"
 	"learn-go/internal/market"
+	"learn-go/internal/models"
+	"learn-go/internal/rules"
 	"learn-go/internal/storage"
 	"learn-go/internal/utils"
-	"learn-go/internal/models"
 )
 
 func StartPriceMonitor(bot *tgbotapi.BotAPI) {
@@ -26,152 +27,143 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 		// 1. PANTAU PORTOFOLIO AKTIF (MyStocks)
 		// ==========================================
 		config.DataMutex.RLock()
-		stockSnapshot := make(map[string]models.TradingPlan)
-		for sym, plan := range config.MyStocks {
-			stockSnapshot[sym] = plan
+		symbols := make([]string, 0, len(config.MyStocks))
+		for sym := range config.MyStocks {
+			symbols = append(symbols, sym)
 		}
 		config.DataMutex.RUnlock()
 
-		for symbol, plan := range stockSnapshot {
+		for _, symbol := range symbols {
 			yahooPrice := market.GetLivePrice(symbol)
 			if yahooPrice == 0 {
 				continue
 			}
 
-			// --- UPDATE HIGHEST PRICE ---
-			needsWrite := false
-			if plan.HighestPrice == 0 {
-				plan.HighestPrice = plan.EntryPrice
-				needsWrite = true
-			}
-
-			if yahooPrice > plan.HighestPrice {
-				plan.HighestPrice = yahooPrice
-				needsWrite = true
-			}
-
-			if needsWrite {
-				config.DataMutex.Lock()
-				config.MyStocks[symbol] = plan
-				config.DataMutex.Unlock()
-				storage.SaveData()
-			}
-
-			// 1. Hitung PNL Saat Ini
-			yahooPNL := utils.CalculateNetPNL(plan.EntryPrice, yahooPrice, config.BuyFee, config.SellFee)
-
-			// 2. Tentukan Batas TSL (Harga Pucuk - 1.5%)
-			tslPrice := plan.HighestPrice * (1 - config.TrailingStopPercent)
-
-			// --- TRIGGER PENGECEKAN ---
-			isTPTrigger := yahooPNL >= config.YahooTPTrigger
-			isCLTrigger := yahooPNL <= -config.YahooCLTrigger
-
-			// 🔥 TSL TRIGGER: Terhubung ke TSLActivationTrigger di Config
-			isTSLTrigger := false
-			if yahooPNL >= config.TSLActivationTrigger {
-				isTSLTrigger = yahooPrice <= tslPrice
-			}
-
-			if isTPTrigger || isCLTrigger || isTSLTrigger {
-				// STEP 2: Cross-check Google Finance
-				realPrice := market.GetGooglePrice(symbol)
-				if realPrice == 0 {
-					realPrice = yahooPrice
+			// Update HighestPrice via UpdatePlan (thread-safe, only writes if changed)
+			changed := config.UpdatePlan(symbol, func(p *models.TradingPlan) {
+				if p.HighestPrice == 0 {
+					p.HighestPrice = p.EntryPrice
 				}
-
-				realPNL := utils.CalculateNetPNL(plan.EntryPrice, realPrice, config.BuyFee, config.SellFee)
-
-				// Verifikasi TSL ulang dengan harga real (Tetap cek syarat aktivasi)
-				realTslTriggered := false
-				if realPNL >= config.TSLActivationTrigger {
-					realTslTriggered = realPrice <= tslPrice
+				if yahooPrice > p.HighestPrice {
+					p.HighestPrice = yahooPrice
 				}
-
-				// STEP 3: Verifikasi Final & Notifikasi
-				conditionMet := false
-				var msg string
-
-				if realPNL >= config.GoogleTPTarget {
-					msg = fmt.Sprintf("🎯 **TAKE PROFIT CONFIRMED!**\n\nEmiten: **%s**\nReal PNL: `+%.2f%%`\nKetik `/sell %s`.", symbol, realPNL, symbol)
-					conditionMet = true
-				} else if realTslTriggered {
-					msg = fmt.Sprintf("🛡️ **TRAILING STOP TERSENTUH!** ✅\n\nEmiten: **%s**\nBatas TSL: `%s`\nCuan Aman: `+%.2f%%`\nKetik `/sell %s`.",
-						symbol, utils.FormatRupiah(tslPrice), realPNL, symbol)
-					conditionMet = true
-				} else if realPNL <= -config.GoogleCLTarget {
-					msg = fmt.Sprintf("🚨 **CUT LOSS CONFIRMED!**\n\nEmiten: **%s**\nReal PNL: `%.2f%%`\nKetik `/sell %s`.", symbol, realPNL, symbol)
-					conditionMet = true
-				}
-
-				if conditionMet {
-					if time.Since(plan.LastNotified) < config.EmergencyDelay {
-						continue
-					}
-					utils.SendMarkdownMessage(bot, msg)
-					plan.LastNotified = time.Now()
-					config.DataMutex.Lock()
-					config.MyStocks[symbol] = plan
-					config.DataMutex.Unlock()
-					storage.SaveData()
-				}
+			})
+			if !changed {
+				continue
 			}
+			storage.SaveData()
+
+			// Evaluate dengan harga Yahoo
+			config.DataMutex.RLock()
+			plan := config.MyStocks[symbol]
+			config.DataMutex.RUnlock()
+
+			d := rules.Default.Evaluate(plan, yahooPrice)
+			if d == rules.None {
+				continue
+			}
+
+			// Cross-check Google (fallback Yahoo)
+			realPrice := market.GetGooglePrice(symbol)
+			if realPrice == 0 {
+				realPrice = yahooPrice
+			}
+
+			d2 := rules.Default.Evaluate(plan, realPrice)
+			if d2 == rules.None {
+				continue
+			}
+
+			// Dedupe: lewati jika recent notification
+			config.DataMutex.RLock()
+			lastPlan := config.MyStocks[symbol]
+			if time.Since(lastPlan.LastNotified) < config.EmergencyDelay {
+				config.DataMutex.RUnlock()
+				continue
+			}
+			config.DataMutex.RUnlock()
+
+			// Bangun pesan
+			msg := buildAlertMessage(symbol, plan, d2, realPrice)
+
+			utils.SendMarkdownMessage(bot, msg)
+
+			// Update LastNotified
+			config.UpdatePlan(symbol, func(p *models.TradingPlan) {
+				p.LastNotified = time.Now()
+			})
+			storage.SaveData()
 		}
 
 		// ==========================================
 		// 2. PANTAU ANTREAN BARU (PendingOrders)
 		// ==========================================
 		config.DataMutex.RLock()
-		orderSnapshot := make(map[string]models.ActiveOrder)
-		for sym, order := range config.PendingOrders {
-			orderSnapshot[sym] = order
+		orderSymbols := make([]string, 0, len(config.PendingOrders))
+		for sym := range config.PendingOrders {
+			orderSymbols = append(orderSymbols, sym)
 		}
 		config.DataMutex.RUnlock()
 
-		for symbol, order := range orderSnapshot {
+		for _, symbol := range orderSymbols {
 			currentPrice := market.GetLivePrice(symbol)
 			if currentPrice == 0 {
 				continue
 			}
 
 			// --- KONDISI 1: AUTO MATCH (LANTAI TERSENTUH/JEBOL) ---
-			// Jika harga market sudah sama dengan atau lebih rendah dari harga antrean kita
-			if currentPrice <= order.OrderPrice {
+			config.DataMutex.RLock()
+			order, exists := config.PendingOrders[symbol]
+			config.DataMutex.RUnlock()
+			if !exists {
+				continue
+			}
 
-				// Langsung hapus dari antrean agar tidak tereksekusi dua kali
+			if currentPrice <= order.OrderPrice {
+				// Hapus dari antrean
 				config.DataMutex.Lock()
 				delete(config.PendingOrders, symbol)
 				config.DataMutex.Unlock()
 
-				// --- CEK APAKAH SUDAH PUNYA SAHAMNYA (AVERAGING DOWN) ---
+				// Cek apakah sudah punya saham ini
 				config.DataMutex.RLock()
-				existingPlan, exists := config.MyStocks[symbol]
+				existingPlan, hasExisting := config.MyStocks[symbol]
 				config.DataMutex.RUnlock()
 
-				if exists {
-					// 1. Hitung total modal lama dan baru
+				if hasExisting {
+					// Averaging
 					totalOldCost := existingPlan.EntryPrice * float64(existingPlan.Lots)
 					totalNewCost := order.OrderPrice * float64(order.Lot)
-
-					// 2. Hitung harga rata-rata baru
 					newTotalLots := existingPlan.Lots + order.Lot
-					newAveragePrice := (totalOldCost + totalNewCost) / float64(newTotalLots)
+					newAvgPrice := (totalOldCost + totalNewCost) / float64(newTotalLots)
 
-					// 3. Update Plan yang sudah ada
-					existingPlan.EntryPrice = newAveragePrice
-					existingPlan.Lots = newTotalLots
-					existingPlan.TakeProfit = utils.RoundToFraction(newAveragePrice * (1 + config.TPPercent))
-					existingPlan.CutLoss = utils.RoundToFraction(newAveragePrice * (1 - config.CLPercent))
-					existingPlan.HighestPrice = newAveragePrice // Reset
+					plan := models.TradingPlan{
+						Symbol:       symbol,
+						EntryPrice:   newAvgPrice,
+						Lots:         newTotalLots,
+						HighestPrice: existingPlan.HighestPrice,
+						BuyDate:      existingPlan.BuyDate,
+						TakeProfit:   rules.Default.TP1Price(newAvgPrice),
+						CutLoss:      rules.Default.DefaultCutLoss(newAvgPrice),
+						TP1Done:      existingPlan.TP1Done,
+					}
 
 					config.DataMutex.Lock()
-					config.MyStocks[symbol] = existingPlan
+					config.MyStocks[symbol] = plan
 					config.DataMutex.Unlock()
-					storage.LogTrade("BUY", symbol, order.OrderPrice, order.Lot, 0.0, "Auto-Match (Averaging Down)")
+					storage.LogTrade(storage.TradeRecord{
+						Action:     "BUY",
+						Symbol:     symbol,
+						Price:      order.OrderPrice,
+						Lots:       order.Lot,
+						PNLPercent: 0,
+						PNLRp:      0,
+						ExitReason: "",
+						Note:       "Auto-Match (Averaging Down)",
+					})
 					storage.SaveData()
 
-					totalModalBaru := newAveragePrice * float64(newTotalLots) * 100 * (1 + config.BuyFee)
-
+					totalModalBaru := newAvgPrice * float64(newTotalLots) * 100 * (1 + rules.Default.BuyFee)
 					msg := fmt.Sprintf("🎯 **ANTREAN MATCH & AVERAGED!**\n\n"+
 						"Emiten: **%s**\n"+
 						"Antrean Beli: `Rp. %.0f` (%d Lot)\n\n"+
@@ -180,28 +172,36 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 						"Harga Rata-rata: `Rp. %.0f`\n"+
 						"Total Modal: `%s` _(Termasuk Fee)_\n\n"+
 						"_Radar Cut Loss & Trailing Stop telah disesuaikan!_ 🛡️",
-						symbol, order.OrderPrice, order.Lot, newTotalLots, newAveragePrice, utils.FormatRupiah(totalModalBaru))
+						symbol, order.OrderPrice, order.Lot, newTotalLots, newAvgPrice, utils.FormatRupiah(totalModalBaru))
 					utils.SendMarkdownMessage(bot, msg)
-
 				} else {
-					// --- ENTRY BARU (BELUM PUNYA SAHAMNYA) ---
+					// Entry baru
 					plan := models.TradingPlan{
 						Symbol:       symbol,
 						EntryPrice:   order.OrderPrice,
 						HighestPrice: order.OrderPrice,
 						Lots:         order.Lot,
-						TakeProfit:   utils.RoundToFraction(order.OrderPrice * (1 + config.TPPercent)),
-						CutLoss:      utils.RoundToFraction(order.OrderPrice * (1 - config.CLPercent)),
+						BuyDate:      time.Now().Format("2006-01-02"),
+						TakeProfit:   rules.Default.TP1Price(order.OrderPrice),
+						CutLoss:      rules.Default.DefaultCutLoss(order.OrderPrice),
 					}
 
 					config.DataMutex.Lock()
 					config.MyStocks[symbol] = plan
 					config.DataMutex.Unlock()
-					storage.LogTrade("BUY", symbol, order.OrderPrice, order.Lot, 0.0, "Auto-Match dari Antrean")
+					storage.LogTrade(storage.TradeRecord{
+						Action:     "BUY",
+						Symbol:     symbol,
+						Price:      order.OrderPrice,
+						Lots:       order.Lot,
+						PNLPercent: 0,
+						PNLRp:      0,
+						ExitReason: "",
+						Note:       "Auto-Match dari Antrean",
+					})
 					storage.SaveData()
 
-					totalModal := order.OrderPrice * float64(order.Lot) * 100 * (1 + config.BuyFee)
-
+					totalModal := order.OrderPrice * float64(order.Lot) * 100 * (1 + rules.Default.BuyFee)
 					msg := fmt.Sprintf("✅ **ANTREAN MATCHED!**\n\n"+
 						"Emiten: **%s**\n"+
 						"Harga Beli: `Rp. %.0f`\n"+
@@ -211,15 +211,18 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 						symbol, order.OrderPrice, order.Lot, utils.FormatRupiah(totalModal))
 					utils.SendMarkdownMessage(bot, msg)
 				}
-
-				continue // Lanjut cek antrean berikutnya
+				continue
 			}
 
 			// --- KONDISI 2: HARGA KABUR (OPPORTUNITY COST) ---
 			diffPercent := (currentPrice - order.OrderPrice) / order.OrderPrice
 
-			if diffPercent >= config.RunawayPercent {
-				if time.Since(order.LastNotified) > 60*time.Minute {
+			if diffPercent >= rules.Default.RunawayPct/100 {
+				config.DataMutex.RLock()
+				currentOrder := config.PendingOrders[symbol]
+				config.DataMutex.RUnlock()
+
+				if time.Since(currentOrder.LastNotified) > 60*time.Minute {
 					msg := fmt.Sprintf("🏃‍♂️💨 **HARGA KABUR BOS!**\n\n"+
 						"Emiten: **%s**\n"+
 						"Antreanmu: `Rp. %.0f`\n"+
@@ -230,12 +233,37 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 
 					utils.SendMarkdownMessage(bot, msg)
 
-					order.LastNotified = time.Now()
-					config.DataMutex.Lock()
-					config.PendingOrders[symbol] = order
-					config.DataMutex.Unlock()
+					config.UpdateOrder(symbol, func(o *models.ActiveOrder) {
+						o.LastNotified = time.Now()
+					})
 				}
 			}
 		}
 	}
+}
+
+func buildAlertMessage(symbol string, plan models.TradingPlan, d rules.Decision, price float64) string {
+	netPNL := rules.Default.NetPNL(plan.EntryPrice, price)
+
+	switch d {
+	case rules.CutLoss:
+		return fmt.Sprintf("🚨 **CUT LOSS CONFIRMED!**\n\nEmiten: **%s**\nReal PNL: `%.2f%%`\nKetik `/sell %s`.", symbol, netPNL, symbol)
+
+	case rules.TrailingStop:
+		tslPrice := rules.Default.TrailingStopPrice(plan.HighestPrice)
+		return fmt.Sprintf("🛡️ **TRAILING STOP TERSENTUH!** ✅\n\nEmiten: **%s**\nBatas TSL: `%s`\nCuan Aman: `+%.2f%%`\nKetik `/sell %s`.", symbol, utils.FormatRupiah(tslPrice), netPNL, symbol)
+
+	case rules.TakeProfit1:
+		// Jual 50% lot (minimal 1)
+		sellLots := plan.Lots / 2
+		if sellLots < 1 {
+			sellLots = plan.Lots
+		}
+		if sellLots == plan.Lots {
+			return fmt.Sprintf("🎯 **TAKE PROFIT CONFIRMED!**\n\nEmiten: **%s**\nReal PNL: `+%.2f%%`\nLot tersisa sedikit —建议 jual semua.\nKetik `/sell %s`.", symbol, netPNL, symbol)
+		}
+		return fmt.Sprintf("🎯 **TAKE PROFIT CONFIRMED!**\n\nEmiten: **%s**\nReal PNL: `+%.2f%%`\nKetik `/sell %s %d`.", symbol, netPNL, symbol, sellLots)
+	}
+
+	return ""
 }

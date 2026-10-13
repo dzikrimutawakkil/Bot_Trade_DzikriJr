@@ -2,19 +2,19 @@ package research
 
 import (
 	"fmt"
-	"sort"
-	"strings"
-	"strconv"
-	"regexp"
-	"time"
-	"math"
 	"log"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"learn-go/internal/config"
-	"learn-go/internal/utils"
-	"learn-go/internal/models"
 	"learn-go/internal/market"
+	"learn-go/internal/models"
+	"learn-go/internal/rules"
+	"learn-go/internal/utils"
 )
 
 func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
@@ -24,119 +24,68 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 	}
 	symbol := strings.ToUpper(args[1])
 	utils.SendSimpleMessage(bot, fmt.Sprintf("🧐 Memulai Deep Research untuk %s... (Mohon tunggu sebentar)", symbol))
-	
-	// 1. Fetch Berita
+
 	news, err := FetchNewsRSS(symbol)
 	if err != nil {
 		utils.SendSimpleMessage(bot, "❌ Gagal mengambil berita.")
 		return
 	}
 
-	// 2. Fetch Teknikal untuk AI & Ambil Angka MA20
 	technicalData, errTech := FetchTechnicalData(symbol)
 	if errTech != nil {
 		utils.SendSimpleMessage(bot, fmt.Sprintf("❌ Gagal mengambil data teknikal untuk %s.", symbol))
 		return
 	}
-	_, _, _, ma20 := GetStockScore(symbol) // <-- AMBIL MA20 UNTUK LOGIKA BoW
+	_, _, _, ma20 := GetStockScore(symbol)
 
-	// 3. Analisis AI Gemini
 	analysis, err := GetDeepAnalysis(symbol, news, technicalData)
 	if err != nil {
 		utils.SendSimpleMessage(bot, fmt.Sprintf("⚠️ Gagal mengambil analisis untuk %s.\nCoba lagi nanti atau hubungi admin.", symbol))
 		return
 	}
 
-	// 4. KALKULATOR POSITION SIZING (SINKRON DENGAN RECOMMENDATION)
 	currentPrice := market.GetLivePrice(symbol)
 	if currentPrice == 0 {
-		currentPrice = market.GetGooglePrice(symbol) // Fallback
+		currentPrice = market.GetGooglePrice(symbol)
 	}
 
-	var planText string
+	planText := ""
 	if currentPrice > 0 {
-		// Fallback jika API MA20 gagal/kosong
 		if ma20 <= 0 {
-			ma20 = currentPrice 
+			ma20 = currentPrice
 		}
 
-		// --- LOGIKA BARU: CONFIRMED BoW (C-BoW) ---
-		// Cari titik ekor bawah (Low) untuk Cut Loss Struktural
-		hist, errHist := market.GetHistoricalPrices(symbol)
-		signalLow := ma20 * 0.98 // Fallback jika gagal ambil historis
-		if errHist == nil && len(hist.Lows) > 0 {
+		hist, _ := market.GetHistoricalPrices(symbol)
+		signalLow := ma20 * 0.98
+		if len(hist.Lows) > 0 {
 			signalLow = hist.Lows[len(hist.Lows)-1]
 		}
 
-		// LOGIKA CUT LOSS STRUKTURAL: 1% di bawah ekor candle
-		cutLossRaw := signalLow * 0.99
-		cutLossPrice := utils.RoundToFraction(cutLossRaw)
+		_, out, ok := buildResearchPlanText(symbol, currentPrice, signalLow, ma20)
+		if ok {
+			in := rules.PlanInput{
+				CurrentPrice: currentPrice,
+				SignalLow:    signalLow,
+				TotalCapital: config.TotalModalTrading,
+				CapitalInUse: config.CapitalInUse(),
+				MarketSafe:   true,
+			}
+			isMarketSafe, _ := GetMarketFilterStatus()
+			in.MarketSafe = isMarketSafe
 
-		// AREA BELI: Karena sudah konfirmasi, mepet harga sekarang (Buy On Close)
-		idealBuyMin := utils.RoundToFraction(currentPrice * 0.99)
-		idealBuyMax := utils.RoundToFraction(currentPrice)
-
-		lossPerLot := (currentPrice - cutLossPrice) * 100
-		if lossPerLot <= 0 {
-			lossPerLot = 1
+			planText = buildPlanText(symbol, in, out, true)
+		} else {
+			planText = "\n\n⚠️ **WARNING: DATA HARGA OFFLINE**\n_(Kalkulator Position Sizing tidak dapat ditampilkan.)_\n"
 		}
-
-		// 1. Hitung Jatah Risiko (Risk Limit)
-		maxRiskRupiah := config.TotalModalTrading * config.MaxRiskPerTrade
-		isMarketSafe, _ := GetMarketFilterStatus()
-		warningDefensif := ""
-		if !isMarketSafe {
-			maxRiskRupiah = maxRiskRupiah / 2.0
-			warningDefensif = " 🛡️ _(Defensive Mode)_"
-		}
-
-		maxLotsByRisk := math.Floor(maxRiskRupiah / lossPerLot)
-		if maxLotsByRisk < 0 {
-			maxLotsByRisk = 0
-		}
-
-		// 2. Hitung berdasarkan sisa Cash Limit
-		hargaSatuLot := currentPrice * 100 * (1 + config.BuyFee)
-		maxLotsByCash := math.Floor(config.TotalModalTrading / hargaSatuLot)
-		if maxLotsByCash < 0 {
-			maxLotsByCash = 0
-		}
-
-		maxLots := int(math.Min(maxLotsByRisk, maxLotsByCash))
-
-		// 3. Hitung Target Profit (Hit & Run 4%)
-		tp1Price := utils.RoundToFraction(currentPrice * 1.04)
-
-		planText = fmt.Sprintf(`
-		━━━━━━━━━━━━━━━━━━
-		📐 **TRADING PLAN (Max %d LOT)**%s
-		📍 **Harga Terkonfirmasi** : Rp %.0f
-		🧱 **Support Ekor (Low)** : Rp %.0f
-
-		🎯 **AREA BELI : Rp %.0f - Rp %.0f**
-		_(Sinyal Valid! Hajar Kanan sebagian sebelum market tutup)_
-
-		🚨 **Batas Cut Loss** : Rp %.0f (Jebol Ekor Bawah)
-		🚀 **TP 1 (Jual 50%% Lot)** : Rp %.0f (Amankan Modal)
-		🛡️ **TP 2 (Sisa 50%%)** : Let It Ride (Trailing Stop 3%%)
-		━━━━━━━━━━━━━━━━━━
-
-		👉 Ketik /buy %s %.0f %d jika ingin eksekusi.`, 
-		maxLots, warningDefensif, currentPrice, signalLow, 
-		idealBuyMin, idealBuyMax, cutLossPrice, 
-		tp1Price, symbol, currentPrice, maxLots)
 	} else {
 		planText = "\n\n⚠️ **WARNING: DATA HARGA OFFLINE**\n_(Kalkulator Position Sizing tidak dapat ditampilkan karena bot gagal menarik harga real-time dari bursa saat ini. Silakan coba lagi nanti.)_\n"
 	}
 
-	// 5. Gabungkan Hasil AI dengan Kalkulator
 	response := fmt.Sprintf("🔍 **Hasil Deep Research: %s**\n\n%s\n%s", symbol, analysis, planText)
-	
 	utils.SendMarkdownMessage(bot, response)
 }
 
 func ProcessRecommendation(bot *tgbotapi.BotAPI) {
-	// --- FITUR BARU: MARKET FILTER IHSG ---
 	utils.SendSimpleMessage(bot, "🔎 Mengecek kondisi angin IHSG (Market Trend)...")
 
 	isMarketSafe, marketStatusMsg := GetMarketFilterStatus()
@@ -159,7 +108,6 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 		}
 	}
 
-	// SORTING SEMENTARA: Urutkan teknikalnya dulu untuk mencari Top 5
 	sort.Slice(results, func(i, j int) bool {
 		if results[i].Score == results[j].Score {
 			return results[i].DistToMA < results[j].DistToMA
@@ -167,25 +115,19 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 		return results[i].Score > results[j].Score
 	})
 
-	// 🔥 FILTERING PINTAR (The Hunter Algorithm) 🔥
 	var finalCandidates []models.Recommendation
 	aiCallCount := 0
-	maxAICalls := 10      // Sabuk pengaman 1: Maksimal nanya AI 10 kali agar API tidak limit
-	targetSetups := 3     // Sabuk pengaman 2: Kita cukup cari 3 saham "BELI" terbaik
+	maxAICalls := 10
+	targetSetups := 3
 
 	for _, res := range results {
-
 		log.Printf("Evaluasi %s - Score: %.0f, Status: %s, Jarak ke MA20: %.2f%%\n", res.Symbol, res.Score, res.Status, res.DistToMA)
 
-		// Hanya proses saham yang secara teknikal bagus (Skor >= 8)
 		if res.Score >= 8 {
-
-			// Kalau sudah terlalu banyak nanya AI, hentikan pencarian
 			if aiCallCount >= maxAICalls {
 				break
 			}
 
-			// 1. Tanya AI (Deep Research)
 			news, _ := FetchNewsRSS(res.Symbol)
 			tech, _ := FetchTechnicalData(res.Symbol)
 			analysis, err := GetDeepAnalysis(res.Symbol, news, tech)
@@ -193,14 +135,11 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 
 			if err == nil && analysis != "" {
 				upperAnalysis := strings.ToUpper(analysis)
-
-				// 2. Langsung Cek Apakah AI merekomendasikan "BELI"
 				if strings.Contains(upperAnalysis, "REKOMENDASI: BELI") || strings.Contains(analysis, "🟢") {
 					res.DeepAnalysis = analysis
-					res.Sentiment = extractSentimentScore(analysis)
+					res.Sentiment = ExtractSentimentScore(analysis)
 					finalCandidates = append(finalCandidates, res)
 
-					// 3. EARLY EXIT: Kalau sudah dapat 3 saham incaran, LANGSUNG BERHENTI!
 					if len(finalCandidates) >= targetSetups {
 						break
 					}
@@ -209,21 +148,18 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 				utils.SendSimpleMessage(bot, fmt.Sprintf("⚠️ Gagal mengambil analisis untuk %s. Coba lagi nanti.", res.Symbol))
 			}
 
-			// 4. Jeda untuk menghindari Error 429 dari Google
 			if len(finalCandidates) < targetSetups && aiCallCount < maxAICalls {
-				time.Sleep(30 * time.Second) // Gunakan 15 detik jika pakai API Key baru
+				time.Sleep(30 * time.Second)
 			}
 		}
 	}
 
-	// Jika setelah di-filter ternyata tidak ada satupun yang layak beli
 	if len(finalCandidates) == 0 {
 		pesanKosong := "📉 **TIDAK ADA SETUP BELI HARI INI**\n\nBerdasarkan filter teknikal dan validasi AI, tidak ada satupun saham yang memberikan sinyal pantulan / Hammer valid hari ini.\n\n_Cash is King!_ Simpan pelurumu untuk hari esok. 👑"
 		utils.SendMarkdownMessage(bot, pesanKosong)
 		return
 	}
 
-	// SORTING FINAL: Urutkan ulang berdasarkan Sentimen AI
 	sort.Slice(finalCandidates, func(i, j int) bool {
 		if finalCandidates[i].Sentiment != finalCandidates[j].Sentiment {
 			return finalCandidates[i].Sentiment > finalCandidates[j].Sentiment
@@ -231,7 +167,6 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 		return finalCandidates[i].DistToMA < finalCandidates[j].DistToMA
 	})
 
-	// RANGKUM PESAN BALASAN
 	var sb strings.Builder
 	var topSymbols []string
 	sb.WriteString("💰 **TOP Saham Rekomendasi (CONFIRMED BoW)** 💰")
@@ -242,86 +177,37 @@ func ProcessRecommendation(bot *tgbotapi.BotAPI) {
 			break
 		}
 
-		emoji := "🔥" // Karena finalCandidates pasti score >= 8
+		emoji := "🔥"
 		sb.WriteString(fmt.Sprintf("\n\n━━━━━━ %s **%s** %s ━━━━━━\n", emoji, res.Symbol, emoji))
 
 		cleanAnalysis := strings.Replace(res.DeepAnalysis, "Hasil Deep Research:", "", 1)
 		cleanAnalysis = strings.Replace(cleanAnalysis, "🔍", "", 1)
 		sb.WriteString(fmt.Sprintf("%s\n", strings.TrimSpace(cleanAnalysis)))
 
-		// --- KALKULATOR POSITION SIZING (VERSI CONFIRMED BoW) ---
 		currentPrice := market.GetLivePrice(res.Symbol)
 		if currentPrice == 0 {
 			currentPrice = market.GetGooglePrice(res.Symbol)
 		}
 
 		if currentPrice > 0 {
-			// Cari titik ekor bawah (Low) hari ini
-			hist, errHist := market.GetHistoricalPrices(res.Symbol)
-			signalLow := res.MA20 * 0.98 // Fallback
-			if errHist == nil && len(hist.Lows) > 0 {
+			signalLow := res.MA20 * 0.98
+			hist, _ := market.GetHistoricalPrices(res.Symbol)
+			if len(hist.Lows) > 0 {
 				signalLow = hist.Lows[len(hist.Lows)-1]
 			}
 
-			// LOGIKA CUT LOSS STRUKTURAL
-			cutLossRaw := signalLow * 0.99
-			cutLossPrice := utils.RoundToFraction(cutLossRaw) 
-
-			// AREA BELI: Mepet harga saat ini
-			idealBuyMin := utils.RoundToFraction(currentPrice * 0.99) 
-			idealBuyMax := utils.RoundToFraction(currentPrice) 
-
-			lossPerLot := (currentPrice - cutLossPrice) * 100
-			if lossPerLot <= 0 {
-				lossPerLot = 1
+			in := rules.PlanInput{
+				CurrentPrice: currentPrice,
+				SignalLow:    signalLow,
+				TotalCapital: config.TotalModalTrading,
+				CapitalInUse: config.CapitalInUse(),
+				MarketSafe:   isMarketSafe,
 			}
-
-			// 1. Hitung Jatah Risiko (Risk Limit)
-			maxRiskRupiah := config.TotalModalTrading * config.MaxRiskPerTrade
-
-			warningDefensif := ""
-			if !isMarketSafe {
-				maxRiskRupiah = maxRiskRupiah / 2.0
-				warningDefensif = " 🛡️ _(Defensive Mode)_"
-			}
-
-			maxLotsByRisk := math.Floor(maxRiskRupiah / lossPerLot)
-			if maxLotsByRisk < 0 {
-				maxLotsByRisk = 0
-			}
-
-			// 2. Hitung berdasarkan sisa Cash Limit
-			hargaSatuLot := currentPrice * 100 * (1 + config.BuyFee)
-			maxLotsByCash := math.Floor(config.TotalModalTrading / hargaSatuLot)
-			if maxLotsByCash < 0 {
-				maxLotsByCash = 0
-			}
-
-			maxLots := int(math.Min(maxLotsByRisk, maxLotsByCash))
-			
-			// 3. Hitung Take Profit Hit & Run
-			tp1Price := utils.RoundToFraction(currentPrice * 1.04)
-
-			tradingPlanText := fmt.Sprintf(`
-			📐 **TRADING PLAN (Max %d LOT)**%s
-			━━━━━━━━━━━━━━━━━━
-			📍 **Harga Terkonfirmasi** : Rp %.0f
-			🧱 **Support Ekor (Low)** : Rp %.0f
-
-			🎯 **AREA BELI : Rp %.0f - Rp %.0f**
-			_(Sinyal Valid! Hajar Kanan sebagian sebelum market tutup)_
-
-			🚨 **Batas Cut Loss** : Rp %.0f (Jebol Ekor Bawah)
-			🚀 **TP 1 (Jual 50%% Lot)** : Rp %.0f (Amankan Modal)
-			🛡️ **TP 2 (Sisa 50%% Lot)** : Trailing Stop 3%%
-			━━━━━━━━━━━━━━━━━━
-			`, maxLots, warningDefensif, currentPrice, signalLow, idealBuyMin, idealBuyMax, cutLossPrice, tp1Price)
-
-			sb.WriteString(tradingPlanText)
+			out := rules.Default.SuggestPlan(in)
+			sb.WriteString(buildPlanText(res.Symbol, in, out, true))
 		} else {
 			sb.WriteString("\n_(Gagal menghitung Plan, data harga offline)_\n\n")
 		}
-		// --------------------------------------------------------
 
 		topSymbols = append(topSymbols, res.Symbol)
 		count++
@@ -357,12 +243,12 @@ func ProcessNews(bot *tgbotapi.BotAPI, topStocks []string) {
 	bot.Send(msg)
 }
 
-func extractSentimentScore(text string) float64 {
+func ExtractSentimentScore(text string) float64 {
 	re := regexp.MustCompile(`(?i)Skor Sentimen[:\*]*\s*([0-9]+(?:\.[0-9]+)?)/10`)
 	match := re.FindStringSubmatch(text)
 	if len(match) > 1 {
 		val, _ := strconv.ParseFloat(match[1], 64)
 		return val
 	}
-	return 0 // Jika gagal ekstrak, sentimen dianggap 0
+	return 0
 }

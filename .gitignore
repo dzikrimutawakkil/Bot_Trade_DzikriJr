@@ -20,6 +20,13 @@ backup-trades/
 # Kalau kamu ingin daftar sahammu tetap private, aktifkan ini:
 stocks.json
 
+# Log files
+*.log
+
+# Output directories
+data/
+backtest_out/
+
 # IDE - Visual Studio Code
 .vscode/
 *.code-workspace
@@ -29,6 +36,10 @@ stocks.json
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Claude related files
 .claude
 CLAUDE.md
+CLAUDE.template.md
 claude-cheat-sheet.md
+CHANGELOG.md

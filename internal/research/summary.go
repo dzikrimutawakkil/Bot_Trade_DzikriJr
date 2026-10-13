@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/robfig/cron/v3"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	
-	"learn-go/internal/market"
+	"github.com/robfig/cron/v3"
+
 	"learn-go/internal/config"
+	"learn-go/internal/market"
 	"learn-go/internal/models"
 	"learn-go/internal/utils"
 )
@@ -40,8 +40,8 @@ func runDailySummary(bot *tgbotapi.BotAPI, title string) {
 	// 🔒 [LOCK READ] Kunci dan Salin Map agar tidak crash saat membaca portofolio
 	config.DataMutex.RLock()
 	stocksCopy := make(map[string]models.TradingPlan)
-	for k, v := range config.MyStocks { 
-		stocksCopy[k] = v 
+	for k, v := range config.MyStocks {
+		stocksCopy[k] = v
 	}
 	config.DataMutex.RUnlock()
 
@@ -54,14 +54,14 @@ func runDailySummary(bot *tgbotapi.BotAPI, title string) {
 	sb.WriteString(fmt.Sprintf("_%s_\n\n", time.Now().Format("Monday, 02 Jan 2006")))
 
 	var totalPNL float64
-	var sourceMarker string 
+	var sourceMarker string
 
 	// Loop menggunakan salinan Map (stocksCopy) yang sudah aman
 	for _, plan := range stocksCopy {
 		// Ambil harga real-time (Google) dengan fallback ke Yahoo
 		price := market.GetGooglePrice(plan.Symbol)
-		
-		sourceMarker = "Real-Time" 
+
+		sourceMarker = "Real-Time"
 		if price == 0 {
 			price = market.GetLivePrice(plan.Symbol)
 			sourceMarker = "Kemungkinan Delay 15m"

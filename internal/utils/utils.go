@@ -1,14 +1,18 @@
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
+	"os"
 	"strings"
 	"time"
-	"log"
-	"math"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"learn-go/internal/config"
 )
+
+var marketHolidays []string
 
 // FormatRupiah mengubah float64 ke format Rp. 1.234
 func FormatRupiah(amount float64) string {
@@ -27,6 +31,24 @@ func FormatRupiah(amount float64) string {
 	return "Rp. " + strings.Join(result, ".")
 }
 
+// LoadHolidays memuat daftar hari libur dari file JSON opsional.
+func LoadHolidays(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("⚠️ Gagal memuat holidays.json: %v", err)
+		}
+		return
+	}
+
+	if err := json.Unmarshal(data, &marketHolidays); err != nil {
+		log.Printf("⚠️ Format holidays.json tidak valid: %v", err)
+		return
+	}
+
+	log.Printf("✅ Memuat %d hari libur bursa.", len(marketHolidays))
+}
+
 // IsMarketOpen mengecek jam buka bursa (WIB)
 func IsMarketOpen() bool {
 	loc, _ := time.LoadLocation("Asia/Jakarta")
@@ -38,14 +60,28 @@ func IsMarketOpen() bool {
 	if now.Hour() < 9 || now.Hour() >= 16 {
 		return false
 	}
+	return IsTradingDay(now)
+}
+
+// IsTradingDay mengembalikan true jika t bukan Sabtu/Minggu dan bukan hari libur.
+func IsTradingDay(t time.Time) bool {
+	if t.Weekday() == time.Saturday || t.Weekday() == time.Sunday {
+		return false
+	}
+	dateStr := t.Format("2006-01-02")
+	for _, h := range marketHolidays {
+		if h == dateStr {
+			return false
+		}
+	}
 	return true
 }
 
 var mainKeyboard = tgbotapi.NewReplyKeyboard(
-    tgbotapi.NewKeyboardButtonRow(
-        tgbotapi.NewKeyboardButton("📊 Status"),
-        tgbotapi.NewKeyboardButton("❓ Recomend"),
-    ),
+	tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton("📊 Status"),
+		tgbotapi.NewKeyboardButton("❓ Recomend"),
+	),
 )
 
 func SendSimpleMessage(bot *tgbotapi.BotAPI, text string) {
@@ -55,52 +91,16 @@ func SendSimpleMessage(bot *tgbotapi.BotAPI, text string) {
 }
 
 func SendMarkdownMessage(bot *tgbotapi.BotAPI, text string) {
-    msg := tgbotapi.NewMessage(config.MyChatID, text)
-    msg.ParseMode = "Markdown"
+	msg := tgbotapi.NewMessage(config.MyChatID, text)
+	msg.ParseMode = "Markdown"
 
-    msg.ReplyMarkup = mainKeyboard 
-    _, err := bot.Send(msg)
-    
-    if err != nil {
-        log.Printf("⚠️ Gagal kirim Markdown: %v. Mengirim teks biasa...", err)
-        
-        msg.ParseMode = "" 
-        bot.Send(msg)
-    }
-}
+	msg.ReplyMarkup = mainKeyboard
+	_, err := bot.Send(msg)
 
-// CalculateNetPNL menghitung persentase profit bersih setelah dipotong fee beli dan jual
-func CalculateNetPNL(entryPrice float64, currentPrice float64, buyFee float64, sellFee float64) float64 {
-	// Modal asli = Harga beli + fee beli
-	totalBuyCapital := entryPrice * (1 + buyFee)
-	
-	// Uang diterima = Harga jual - fee jual
-	netSellValue := currentPrice * (1 - sellFee)
-	
-	// Rumus untung bersih
-	return ((netSellValue - totalBuyCapital) / totalBuyCapital) * 100
-}
+	if err != nil {
+		log.Printf("⚠️ Gagal kirim Markdown: %v. Mengirim teks biasa...", err)
 
-func RoundToFraction(price float64) float64 {
-	var fraction float64
-
-	switch {
-	case price < 50:
-		// Saham gocap atau di bawahnya (aturan papan pemantauan khusus)
-		fraction = 1 
-	case price < 200:
-		fraction = 1
-	case price < 500:
-		fraction = 2
-	case price < 2000:
-		fraction = 5
-	case price < 5000:
-		fraction = 10
-	default:
-		// Harga di atas 5000
-		fraction = 25
+		msg.ParseMode = ""
+		bot.Send(msg)
 	}
-
-	// Rumus pembulatan ke kelipatan terdekat
-	return math.Round(price/fraction) * fraction
 }
