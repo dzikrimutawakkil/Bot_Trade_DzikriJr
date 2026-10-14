@@ -15,6 +15,11 @@ import (
 )
 
 func StartPriceMonitor(bot *tgbotapi.BotAPI) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("⚠️ Price monitor ticker recovered: %v", r)
+		}
+	}()
 	ticker := time.NewTicker(config.CheckPeriod)
 	log.Println("📡 Monitor harga (Dual-Check) aktif dengan Trailing Stop & Order Match...")
 
@@ -57,6 +62,21 @@ func StartPriceMonitor(bot *tgbotapi.BotAPI) {
 			config.DataMutex.RLock()
 			plan := config.MyStocks[symbol]
 			config.DataMutex.RUnlock()
+
+			// TIME STOP: Exit if hold days >= 20
+			config.DataMutex.RLock()
+			currentPlan := config.MyStocks[symbol]
+			config.DataMutex.RUnlock()
+			if currentPlan.HoldDays >= 20 {
+				if time.Since(currentPlan.LastNotified) >= config.EmergencyDelay {
+					msg := fmt.Sprintf("⏰ **TIME STOP — %s sudah 20 hari bursa!**\n\nSegera jual manual dengan `/sell %s`.", symbol, symbol)
+					utils.SendMarkdownMessage(bot, msg)
+					config.UpdatePlan(symbol, func(p *models.TradingPlan) {
+						p.LastNotified = time.Now()
+					})
+					storage.SaveData()
+				}
+			}
 
 			d := rules.Default.Evaluate(plan, yahooPrice)
 			if d == rules.None {

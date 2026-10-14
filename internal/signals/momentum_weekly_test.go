@@ -38,9 +38,9 @@ func makeDowntrendBars(price float64, n int) []models.Bar {
 
 func TestSelectWeeklyCandidates_Uptrend(t *testing.T) {
 	bars := map[string][]models.Bar{
-		"UP1": makeUptrendBars(1000, 60),
-		"UP2": makeUptrendBars(800, 60),
-		"FL":  makeFlatBars(500, 60),
+		"UP1":  makeUptrendBars(1000, 60),
+		"UP2":  makeUptrendBars(800, 60),
+		"FL":   makeFlatBars(500, 60),
 		"DOWN": makeDowntrendBars(2000, 60),
 	}
 	day := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, 59)

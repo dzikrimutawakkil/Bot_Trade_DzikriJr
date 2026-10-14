@@ -16,6 +16,7 @@ import (
 	"learn-go/internal/models"
 	"learn-go/internal/research"
 	"learn-go/internal/rules"
+	"learn-go/internal/storage"
 	"learn-go/internal/utils"
 )
 
@@ -117,6 +118,12 @@ func ProcessPortfolioEvaluation(bot *tgbotapi.BotAPI) {
 	var totalPNLRupiah float64
 
 	for _, plan := range stocksToEval {
+		// Increment HoldDays (TIME stop tracking)
+		config.UpdatePlan(plan.Symbol, func(p *models.TradingPlan) {
+			p.HoldDays++
+		})
+		storage.SaveData()
+
 		currentPrice := market.GetLivePrice(plan.Symbol)
 		if currentPrice == 0 {
 			currentPrice = market.GetGooglePrice(plan.Symbol)

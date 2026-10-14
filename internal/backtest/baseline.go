@@ -13,19 +13,19 @@ import (
 
 // BaselineResult is the outcome of a baseline run for compare.md.
 type BaselineResult struct {
-	Name            string
-	FinalEquity     float64
-	TotalInjected   float64
-	ReturnPct       float64
-	MaxDrawdownPct  float64
-	TradeCount      int
-	ExpectancyPct   float64
-	WinRate         float64
-	ProfitFactor    float64
-	AnnualizedPct   float64
-	EquityCurve     []EquityPoint
-	StartDate       time.Time
-	EndDate         time.Time
+	Name           string
+	FinalEquity    float64
+	TotalInjected  float64
+	ReturnPct      float64
+	MaxDrawdownPct float64
+	TradeCount     int
+	ExpectancyPct  float64
+	WinRate        float64
+	ProfitFactor   float64
+	AnnualizedPct  float64
+	EquityCurve    []EquityPoint
+	StartDate      time.Time
+	EndDate        time.Time
 }
 
 // RunBaselineRandom3 — every week (Mon-like), pick `topN` symbols uniformly
@@ -120,7 +120,7 @@ func RunBaselineDCA(cfg Config, allBars map[string][]models.Bar) BaselineResult 
 		for _, pos := range positions {
 			bar := findBarAtDay(allBars[pos.Symbol], day)
 			if bar != nil {
-				dayEquity += pos.EntryPrice*100*float64(pos.Lot)*(1+rules.Default.NetPNL(pos.EntryPrice, bar.Close)/100)
+				dayEquity += pos.EntryPrice * 100 * float64(pos.Lot) * (1 + rules.Default.NetPNL(pos.EntryPrice, bar.Close)/100)
 			}
 		}
 		if dayEquity > peak {
@@ -142,7 +142,7 @@ func RunBaselineDCA(cfg Config, allBars map[string][]models.Bar) BaselineResult 
 			continue
 		}
 		pct := rules.Default.NetPNL(pos.EntryPrice, bar.Close)
-		finalCash += pos.EntryPrice*100*float64(pos.Lot)*(1+pct/100)
+		finalCash += pos.EntryPrice * 100 * float64(pos.Lot) * (1 + pct/100)
 	}
 	returnPct := 0.0
 	if totalInjected > 0 {
@@ -216,7 +216,7 @@ func RunBaselineBuyHold(cfg Config, allBars map[string][]models.Bar) BaselineRes
 		for _, pos := range positions {
 			bar := findBarAtDay(allBars[pos.Symbol], day)
 			if bar != nil {
-				dayEquity += pos.EntryPrice*100*float64(pos.Lot)*(1+rules.Default.NetPNL(pos.EntryPrice, bar.Close)/100)
+				dayEquity += pos.EntryPrice * 100 * float64(pos.Lot) * (1 + rules.Default.NetPNL(pos.EntryPrice, bar.Close)/100)
 			}
 		}
 		if dayEquity > peak {
@@ -237,7 +237,7 @@ func RunBaselineBuyHold(cfg Config, allBars map[string][]models.Bar) BaselineRes
 			continue
 		}
 		pct := rules.Default.NetPNL(pos.EntryPrice, bar.Close)
-		finalCash += pos.EntryPrice*100*float64(pos.Lot)*(1+pct/100)
+		finalCash += pos.EntryPrice * 100 * float64(pos.Lot) * (1 + pct/100)
 	}
 	returnPct := 0.0
 	if totalInjected > 0 {
@@ -441,7 +441,7 @@ func runWeeklyRebalancer(cfg Config, allBars map[string][]models.Bar, topN int, 
 			}
 			bar := findBarAtDay(allBars[sym], day)
 			if bar != nil {
-				dayEquity += pos.EntryPrice*100*float64(pos.Lot)*(1+rules.Default.NetPNL(pos.EntryPrice, bar.Close)/100)
+				dayEquity += pos.EntryPrice * 100 * float64(pos.Lot) * (1 + rules.Default.NetPNL(pos.EntryPrice, bar.Close)/100)
 			}
 		}
 		if dayEquity > peak {

@@ -5,6 +5,7 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"learn-go/internal/config"
+	"learn-go/internal/forwardtest"
 	"learn-go/internal/portfolio"
 	"learn-go/internal/research"
 	"learn-go/internal/shadow"
@@ -63,7 +64,7 @@ func HandleMessages(bot *tgbotapi.BotAPI) {
 			portfolio.ProcessStatusCommand(bot)
 			continue
 		case "/recommend", "❓ Recomend":
-			go research.ProcessRecommendation(bot)
+			go research.ProcessS08Recommendation(bot)
 			continue
 		}
 
@@ -92,6 +93,8 @@ func HandleMessages(bot *tgbotapi.BotAPI) {
 			}
 		case "/shadow":
 			ProcessShadowCommand(bot)
+		case "/forwardtest":
+			forwardtest.Handler(bot)
 		default:
 			utils.SendSimpleMessage(bot, "Gunakan perintah:\n`/buy [KODE] [HARGA] [LOT]`\n`/status` | `/recommend`")
 		}

@@ -28,7 +28,7 @@ var Default = Rules{
 	DefaultCutLossPct:        3.0,
 	StructuralCLBufferPct:    1.0,
 	BuyZoneBelowPct:          1.0,
-	TP1Pct:                   4.0,
+	TP1Pct:                   5.0,
 	TP1SellFraction:          0.5,
 	TrailingStopPct:          3.0,
 	TrailingActivationNetPct: 2.0,

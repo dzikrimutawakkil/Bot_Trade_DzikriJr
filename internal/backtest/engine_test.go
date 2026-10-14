@@ -310,7 +310,7 @@ func TestEngine_PullbackMA20(t *testing.T) {
 	// Signal bar: ma20=100, low=90<1.01×100=101 → cond3 passes
 	ma20 := 100.0
 	bars = append(bars, btBar(2024, 2, 10, ma20-1, ma20, 90, ma20+0.5, 1e9)) // signal
-	bars = append(bars, btBar(2024, 2, 11, 970, 970, 970, 970, 1e9))        // exit CL
+	bars = append(bars, btBar(2024, 2, 11, 970, 970, 970, 970, 1e9))         // exit CL
 
 	// IHSG in uptrend so MarketSafe=true
 	ihsgBars := make([]models.Bar, 60)

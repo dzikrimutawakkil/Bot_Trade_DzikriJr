@@ -11,7 +11,6 @@ import (
 	"learn-go/internal/models"
 )
 
-
 func LoadBars(symbol string, years int, refresh bool) ([]models.Bar, error) {
 	cacheDir := "data/cache"
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {

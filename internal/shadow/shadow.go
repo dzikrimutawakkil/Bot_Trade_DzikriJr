@@ -16,12 +16,12 @@ import (
 )
 
 const (
-	FileName        = "signals_log.csv"
-	IHSG            = "^JKSE"
-	RecordHour      = 16
-	RecordMinute    = 30
-	FillHour        = 16
-	FillMinute      = 50
+	FileName         = "signals_log.csv"
+	IHSG             = "^JKSE"
+	RecordHour       = 16
+	RecordMinute     = 30
+	FillHour         = 16
+	FillMinute       = 50
 	MaxAICallsPerDay = 25
 	AICallDelaySec   = 15
 	MinScore         = 7.0
@@ -29,8 +29,8 @@ const (
 )
 
 var (
-	mu         sync.Mutex
-	dataDir    string
+	mu      sync.Mutex
+	dataDir string
 )
 
 func init() {
@@ -55,25 +55,25 @@ func filePath() string {
 
 // Row represents a single signal log entry.
 type Row struct {
-	Date          string
-	Symbol        string
-	Score         float64
-	Code          string
-	MarketState   string
-	Close         float64
-	SignalLow     float64
-	PlanCL        float64
-	PlanTP1       float64
-	AIReco        string
-	AISentiment   float64
-	AIConfidence  float64
-	Model         string
-	Ret1D         float64
-	Ret3D         float64
-	Ret5D         float64
-	MaxUp5D       float64
-	MaxDD5D       float64
-	Filled        bool
+	Date         string
+	Symbol       string
+	Score        float64
+	Code         string
+	MarketState  string
+	Close        float64
+	SignalLow    float64
+	PlanCL       float64
+	PlanTP1      float64
+	AIReco       string
+	AISentiment  float64
+	AIConfidence float64
+	Model        string
+	Ret1D        float64
+	Ret3D        float64
+	Ret5D        float64
+	MaxUp5D      float64
+	MaxDD5D      float64
+	Filled       bool
 }
 
 // LoadRows reads all rows from the CSV file. Returns nil on empty/missing file.
@@ -114,14 +114,14 @@ func parseRecord(rec []string, lineNum int) (Row, error) {
 	}
 	row := Row{
 		Date:        strings.TrimSpace(rec[0]),
-		Symbol:     strings.TrimSpace(rec[1]),
+		Symbol:      strings.TrimSpace(rec[1]),
 		MarketState: strings.TrimSpace(rec[4]),
-		Close:      toFloat(rec[5]),
-		SignalLow:  toFloat(rec[6]),
-		PlanCL:     toFloat(rec[7]),
-		PlanTP1:    toFloat(rec[8]),
-		AIReco:     strings.TrimSpace(rec[9]),
-		Model:      strings.TrimSpace(rec[12]),
+		Close:       toFloat(rec[5]),
+		SignalLow:   toFloat(rec[6]),
+		PlanCL:      toFloat(rec[7]),
+		PlanTP1:     toFloat(rec[8]),
+		AIReco:      strings.TrimSpace(rec[9]),
+		Model:       strings.TrimSpace(rec[12]),
 	}
 	row.Score, _ = strconv.ParseFloat(strings.TrimSpace(rec[2]), 64)
 	row.Code = strings.TrimSpace(rec[3])

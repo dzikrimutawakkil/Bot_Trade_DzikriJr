@@ -497,7 +497,10 @@ func checkRobustness(baseCfg Config, allBars map[string][]models.Bar, ihsgBars [
 }
 
 func top3Contrib(trades []Trade) map[string]bool {
-	type pair struct{ sym string; pnl float64 }
+	type pair struct {
+		sym string
+		pnl float64
+	}
 	var pairs []pair
 	bySym := make(map[string]float64)
 	for _, t := range trades {

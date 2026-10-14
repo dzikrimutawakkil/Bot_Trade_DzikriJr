@@ -2,9 +2,7 @@ package research
 
 import (
 	"fmt"
-	"log"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +12,7 @@ import (
 	"learn-go/internal/market"
 	"learn-go/internal/models"
 	"learn-go/internal/rules"
+	"learn-go/internal/signals"
 	"learn-go/internal/utils"
 )
 
@@ -85,142 +84,75 @@ func ProcessResearchCommand(bot *tgbotapi.BotAPI, args []string) {
 	utils.SendMarkdownMessage(bot, response)
 }
 
-func ProcessRecommendation(bot *tgbotapi.BotAPI) {
-	utils.SendSimpleMessage(bot, "🔎 Mengecek kondisi angin IHSG (Market Trend)...")
+func ProcessS08Recommendation(bot *tgbotapi.BotAPI) {
+	utils.SendSimpleMessage(bot, "📊 Scanning S08 Momentum (MA5 > MA20 > MA50)...")
 
-	isMarketSafe, marketStatusMsg := GetMarketFilterStatus()
-	utils.SendMarkdownMessage(bot, marketStatusMsg)
+	today := time.Now()
 
-	utils.SendSimpleMessage(bot, "⏳ Proses sortir watchlist sedang berlangsung...")
-
-	var results []models.Recommendation
-
-	for _, s := range config.Watchlist {
-		score, status, distToMA, ma20 := GetStockScore(s)
-		if score > 0 {
-			results = append(results, models.Recommendation{
-				Symbol:   s,
-				Score:    score,
-				Status:   status,
-				DistToMA: distToMA,
-				MA20:     ma20,
-			})
+	allBars := make(map[string][]models.Bar)
+	for _, sym := range config.Watchlist {
+		bars, err := market.GetBars(sym, "3mo")
+		if err != nil {
+			continue
+		}
+		clean := market.CleanBars(bars)
+		if len(clean) >= 50 {
+			allBars[sym] = clean
 		}
 	}
 
-	sort.Slice(results, func(i, j int) bool {
-		if results[i].Score == results[j].Score {
-			return results[i].DistToMA < results[j].DistToMA
-		}
-		return results[i].Score > results[j].Score
-	})
+	candidates := signals.SelectWeeklyCandidates(allBars, config.Watchlist, today, 4)
 
-	var finalCandidates []models.Recommendation
-	aiCallCount := 0
-	maxAICalls := 10
-	targetSetups := 3
-
-	for _, res := range results {
-		log.Printf("Evaluasi %s - Score: %.0f, Status: %s, Jarak ke MA20: %.2f%%\n", res.Symbol, res.Score, res.Status, res.DistToMA)
-
-		if res.Score >= 8 {
-			if aiCallCount >= maxAICalls {
-				break
-			}
-
-			news, _ := FetchNewsRSS(res.Symbol)
-			tech, _ := FetchTechnicalData(res.Symbol)
-			analysis, err := GetDeepAnalysis(res.Symbol, news, tech)
-			aiCallCount++
-
-			if err == nil && analysis != "" {
-				upperAnalysis := strings.ToUpper(analysis)
-				if strings.Contains(upperAnalysis, "REKOMENDASI: BELI") || strings.Contains(analysis, "🟢") {
-					res.DeepAnalysis = analysis
-					res.Sentiment = ExtractSentimentScore(analysis)
-					finalCandidates = append(finalCandidates, res)
-
-					if len(finalCandidates) >= targetSetups {
-						break
-					}
-				}
-			} else {
-				utils.SendSimpleMessage(bot, fmt.Sprintf("⚠️ Gagal mengambil analisis untuk %s. Coba lagi nanti.", res.Symbol))
-			}
-
-			if len(finalCandidates) < targetSetups && aiCallCount < maxAICalls {
-				time.Sleep(30 * time.Second)
-			}
-		}
-	}
-
-	if len(finalCandidates) == 0 {
-		pesanKosong := "📉 **TIDAK ADA SETUP BELI HARI INI**\n\nBerdasarkan filter teknikal dan validasi AI, tidak ada satupun saham yang memberikan sinyal pantulan / Hammer valid hari ini.\n\n_Cash is King!_ Simpan pelurumu untuk hari esok. 👑"
-		utils.SendMarkdownMessage(bot, pesanKosong)
+	if len(candidates) == 0 {
+		msg := "📉 **TIDAK ADA SETUP S08 HARI INI**\n\n" +
+			"Tidak ada saham yang memenuhi filter:\n" +
+			"• MA5 > MA20 > MA50 (uptrend)\n" +
+			"• Volatilitas < 6%\n\n" +
+			"_Cash is King!_ 👑"
+		utils.SendMarkdownMessage(bot, msg)
 		return
 	}
 
-	sort.Slice(finalCandidates, func(i, j int) bool {
-		if finalCandidates[i].Sentiment != finalCandidates[j].Sentiment {
-			return finalCandidates[i].Sentiment > finalCandidates[j].Sentiment
+	// Update with live prices
+	for i := range candidates {
+		p := market.GetLivePrice(candidates[i].Symbol)
+		if p == 0 {
+			p = candidates[i].Close
 		}
-		return finalCandidates[i].DistToMA < finalCandidates[j].DistToMA
-	})
-
-	var sb strings.Builder
-	var topSymbols []string
-	sb.WriteString("💰 **TOP Saham Rekomendasi (CONFIRMED BoW)** 💰")
-
-	count := 0
-	for _, res := range finalCandidates {
-		if count >= 3 {
-			break
-		}
-
-		emoji := "🔥"
-		sb.WriteString(fmt.Sprintf("\n\n━━━━━━ %s **%s** %s ━━━━━━\n", emoji, res.Symbol, emoji))
-
-		cleanAnalysis := strings.Replace(res.DeepAnalysis, "Hasil Deep Research:", "", 1)
-		cleanAnalysis = strings.Replace(cleanAnalysis, "🔍", "", 1)
-		sb.WriteString(fmt.Sprintf("%s\n", strings.TrimSpace(cleanAnalysis)))
-
-		currentPrice := market.GetLivePrice(res.Symbol)
-		if currentPrice == 0 {
-			currentPrice = market.GetGooglePrice(res.Symbol)
-		}
-
-		if currentPrice > 0 {
-			signalLow := res.MA20 * 0.98
-			hist, _ := market.GetHistoricalPrices(res.Symbol)
-			if len(hist.Lows) > 0 {
-				signalLow = hist.Lows[len(hist.Lows)-1]
-			}
-
-			in := rules.PlanInput{
-				CurrentPrice: currentPrice,
-				SignalLow:    signalLow,
-				TotalCapital: config.TotalModalTrading,
-				CapitalInUse: config.CapitalInUse(),
-				MarketSafe:   isMarketSafe,
-			}
-			out := rules.Default.SuggestPlan(in)
-			sb.WriteString(buildPlanText(res.Symbol, in, out, true))
-		} else {
-			sb.WriteString("\n_(Gagal menghitung Plan, data harga offline)_\n\n")
-		}
-
-		topSymbols = append(topSymbols, res.Symbol)
-		count++
+		candidates[i].Close = p
 	}
 
-	dataBerita := "news:" + strings.Join(topSymbols, ",")
-	btn := tgbotapi.NewInlineKeyboardButtonData("📰 Cek Berita Rekomendasi", dataBerita)
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(btn))
+	var sb strings.Builder
+	sb.WriteString("💰 **S08 MOMENTUM SCAN** 💰\n\n")
+	sb.WriteString("Filter: MA5 > MA20 > MA50 | Volatilitas < 6%\n\n")
 
-	msg := tgbotapi.NewMessage(config.MyChatID, sb.String())
-	msg.ParseMode = "Markdown"
-	msg.ReplyMarkup = keyboard
-	bot.Send(msg)
+	for i, c := range candidates {
+		perf := rules.Default.NetPNL(c.Close, c.Close) // 0 at entry
+		_ = perf
+		ema := fmt.Sprintf("MA5: %.0f | MA20: %.0f | MA50: %.0f\n", c.MA5, c.MA20, c.MA50)
+		momentum := fmt.Sprintf("Momentum: +%.2f%% dari MA5\n", c.MomentumPct)
+
+		sb.WriteString(fmt.Sprintf("━━━━━━ 🔥 %d. %s ━━━━━━\n", i+1, c.Symbol))
+		sb.WriteString(fmt.Sprintf("Harga  : Rp %.0f\n", c.Close))
+		sb.WriteString(ema)
+		sb.WriteString(momentum)
+
+		alloc := config.RemainingCapital() / float64(len(candidates))
+		costPerLot := c.Close * 100 * (1 + rules.Default.BuyFee)
+		lots := int(alloc / costPerLot)
+		if lots < 1 {
+			lots = 1
+		}
+		modal := c.Close * float64(lots) * 100 * (1 + rules.Default.BuyFee)
+		tp1 := rules.Default.TP1Price(c.Close)
+		cl := rules.Default.DefaultCutLoss(c.Close)
+
+		sb.WriteString(fmt.Sprintf("Lot    : %d (Modal ~%s)\n", lots, utils.FormatRupiah(modal)))
+		sb.WriteString(fmt.Sprintf("TP1    : %s (+5%%)\n", utils.FormatRupiah(tp1)))
+		sb.WriteString(fmt.Sprintf("CL     : %s (-3%%)\n\n", utils.FormatRupiah(cl)))
+	}
+
+	bot.Send(tgbotapi.NewMessage(config.MyChatID, sb.String()))
 }
 
 func ProcessNews(bot *tgbotapi.BotAPI, topStocks []string) {

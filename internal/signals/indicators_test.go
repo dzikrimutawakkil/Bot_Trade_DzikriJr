@@ -113,8 +113,8 @@ func TestBreakout_HighSpike21BarsAgo_NotBlocking(t *testing.T) {
 	for i := 0; i < 66; i++ {
 		bars[i] = tbar(100, 100, 100, 100, 100, 66-i)
 	}
-	bars[43] = tbar(105, 105, 105, 105, 100, 23)  // spike at -22 (daysAgo=23), outside window
-	bars[65] = tbar(101, 101, 101, 101, 200, 0)   // signal bar: Close=101, High=101
+	bars[43] = tbar(105, 105, 105, 105, 100, 23) // spike at -22 (daysAgo=23), outside window
+	bars[65] = tbar(101, 101, 101, 101, 200, 0)  // signal bar: Close=101, High=101
 
 	sig := (&breakout20Strategy{}).Evaluate(bars, true)
 	if sig.Score != 10 {
@@ -128,8 +128,8 @@ func TestBreakout_HighSpike1BarAgo_Blocks(t *testing.T) {
 	for i := 0; i < 66; i++ {
 		bars[i] = tbar(100, 100, 100, 100, 100, 66-i)
 	}
-	bars[64] = tbar(105, 105, 105, 105, 100, 1)  // spike at -1 (second newest), High=105
-	bars[65] = tbar(101, 101, 101, 101, 200, 0)  // signal bar: Close=101, High=101
+	bars[64] = tbar(105, 105, 105, 105, 100, 1) // spike at -1 (second newest), High=105
+	bars[65] = tbar(101, 101, 101, 101, 200, 0) // signal bar: Close=101, High=101
 
 	sig := (&breakout20Strategy{}).Evaluate(bars, true)
 	if sig.Score != 0 {

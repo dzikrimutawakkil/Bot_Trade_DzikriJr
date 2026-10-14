@@ -14,23 +14,23 @@ type GroupKey struct {
 
 // GroupStats holds aggregated statistics for a group.
 type GroupStats struct {
-	Key           GroupKey
-	N             int
-	WinRate3D     float64
-	AvgRet3D      float64
-	AvgMaxDD5D    float64
-	AvgRet1D      float64
-	AvgRet5D      float64
-	AvgMaxUp5D    float64
+	Key        GroupKey
+	N          int
+	WinRate3D  float64
+	AvgRet3D   float64
+	AvgMaxDD5D float64
+	AvgRet1D   float64
+	AvgRet5D   float64
+	AvgMaxUp5D float64
 }
 
 // Summary holds the full shadow log summary.
 type Summary struct {
-	FilledRows     int
-	DateRange      string
-	Groups         []GroupStats
+	FilledRows           int
+	DateRange            string
+	Groups               []GroupStats
 	CompareBELIvsHindari float64
-	SmallSampleWarning bool
+	SmallSampleWarning   bool
 }
 
 // Summarize computes a summary from filled rows.

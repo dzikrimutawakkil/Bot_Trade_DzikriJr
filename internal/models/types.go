@@ -44,6 +44,42 @@ type Recommendation struct {
 	MA20         float64
 }
 
+// FTPosition represents a simulated position in the forward test.
+type FTPosition struct {
+	Symbol       string
+	EntryPrice   float64
+	HighestPrice float64
+	Lots         int
+	BuyDate      string
+	HoldDays     int
+	TP1Done      bool
+}
+
+// FTState represents the entire forward test simulation state.
+type FTState struct {
+	StartDate    string
+	StartEquity  float64
+	Equity       float64
+	PeakEquity   float64
+	MaxDD        float64
+	Positions    map[string]FTPosition
+	ClosedTrades []FTClosedTrade
+}
+
+// FTClosedTrade represents a completed trade in the forward test.
+type FTClosedTrade struct {
+	Symbol     string
+	EntryPrice float64
+	ExitPrice  float64
+	Lots       int
+	EntryDate  string
+	ExitDate   string
+	HoldDays   int
+	PNLPercent float64
+	PNLRp      float64
+	ExitReason string
+}
+
 // TradingPlan: Struktur data untuk saham yang dipantau
 type TradingPlan struct {
 	Symbol       string
@@ -54,6 +90,7 @@ type TradingPlan struct {
 	Lots         int
 	LastNotified time.Time
 	BuyDate      string
+	HoldDays     int
 	TP1Done      bool
 }
 

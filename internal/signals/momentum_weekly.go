@@ -57,6 +57,20 @@ func SelectWeeklyCandidates(allBars map[string][]models.Bar, symbols []string, d
 			continue
 		}
 
+		// Intraday volatility filter: avg((High-Low)/Close) last 10 days
+		if idx >= 10 {
+			sumVol := 0.0
+			for i := idx - 9; i <= idx; i++ {
+				if bars[i].Close > 0 {
+					sumVol += (bars[i].High - bars[i].Low) / bars[i].Close
+				}
+			}
+			avgVol := sumVol / 10.0
+			if avgVol > 0.06 { // Test: 6% threshold
+				continue
+			}
+		}
+
 		close := closes[idx]
 		momentum := (close - ma5) / ma5 * 100
 		candidates = append(candidates, WeeklyCandidate{

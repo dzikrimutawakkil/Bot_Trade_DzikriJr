@@ -111,9 +111,9 @@ func TestTradingDaysBetween(t *testing.T) {
 	// But we need Monday: let me check: Oct 18, 2026 is Sunday
 	// Let me use a known Monday
 	mon = time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC) // Monday
-	tue := mon.AddDate(0, 0, 1)   // Tuesday
-	fri := mon.AddDate(0, 0, 4)   // Friday
-	nextMon := mon.AddDate(0, 0, 7) // next Monday
+	tue := mon.AddDate(0, 0, 1)                         // Tuesday
+	fri := mon.AddDate(0, 0, 4)                         // Friday
+	nextMon := mon.AddDate(0, 0, 7)                     // next Monday
 
 	if n := TradingDaysBetween(mon, tue); n != 1 {
 		t.Errorf("Mon->Tue = %d, want 1", n)

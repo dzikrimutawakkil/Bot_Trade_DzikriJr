@@ -37,18 +37,18 @@ type Config struct {
 }
 
 type Trade struct {
-	EntryDate        time.Time
-	Symbol           string
-	SignalCode       string
-	EntryPrice       float64
-	ExitDate         time.Time
-	ExitReason       string
-	LotsSold         int
-	LotsTotal        int
-	PNLPctNet        float64
-	PNLRpNet         float64
-	HoldDays         int
-	HoldTradingDays  int
+	EntryDate       time.Time
+	Symbol          string
+	SignalCode      string
+	EntryPrice      float64
+	ExitDate        time.Time
+	ExitReason      string
+	LotsSold        int
+	LotsTotal       int
+	PNLPctNet       float64
+	PNLRpNet        float64
+	HoldDays        int
+	HoldTradingDays int
 }
 
 type EquityPoint struct {
@@ -58,29 +58,29 @@ type EquityPoint struct {
 }
 
 type Result struct {
-	Trades             []Trade
-	EquityCurve        []EquityPoint
-	Metrics            Metrics
-	SignalCounts       map[string]int
-	IHSGFiltered       int
-	FinalCapital       float64
-	TotalReturnPct     float64
-	SkippedSignals     []SkippedSignal
+	Trades              []Trade
+	EquityCurve         []EquityPoint
+	Metrics             Metrics
+	SignalCounts        map[string]int
+	IHSGFiltered        int
+	FinalCapital        float64
+	TotalReturnPct      float64
+	SkippedSignals      []SkippedSignal
 	SignalCountsPerMode map[string]map[string]int
 }
 
 type Metrics struct {
-	TotalTrades      int
-	WinRate          float64
-	AvgWinPct        float64
-	AvgLossPct       float64
-	ExpectancyPct    float64
-	ExpectancyRp     float64
-	ProfitFactor     float64
-	ProfitFactorPct  float64
-	MaxDrawdown      float64
-	AvgHoldDays      float64
-	ExitReasons      map[string]ExitStats
+	TotalTrades     int
+	WinRate         float64
+	AvgWinPct       float64
+	AvgLossPct      float64
+	ExpectancyPct   float64
+	ExpectancyRp    float64
+	ProfitFactor    float64
+	ProfitFactorPct float64
+	MaxDrawdown     float64
+	AvgHoldDays     float64
+	ExitReasons     map[string]ExitStats
 }
 
 type ExitStats struct {
@@ -425,14 +425,14 @@ func Run(cfg Config, allBars map[string][]models.Bar, ihsgBars []models.Bar) (Re
 	totalReturnPct := (finalCapital - cfg.Capital) / cfg.Capital * 100
 
 	return Result{
-		Trades:             trades,
-		EquityCurve:         nil,
-		Metrics:             metrics,
-		SignalCounts:        signalCounts,
-		IHSGFiltered:        ihsgFiltered,
-		FinalCapital:        finalCapital,
-		TotalReturnPct:      totalReturnPct,
-		SkippedSignals:      skippedSignals,
+		Trades:         trades,
+		EquityCurve:    nil,
+		Metrics:        metrics,
+		SignalCounts:   signalCounts,
+		IHSGFiltered:   ihsgFiltered,
+		FinalCapital:   finalCapital,
+		TotalReturnPct: totalReturnPct,
+		SkippedSignals: skippedSignals,
 	}, nil
 }
 
@@ -449,18 +449,18 @@ func newTrade(pos position, day time.Time, reason string, lotsSold, lotsTotal in
 		}
 	}
 	return Trade{
-		EntryDate:        pos.EntryDate,
-		Symbol:           pos.Symbol,
-		SignalCode:       pos.SigCode,
-		EntryPrice:       pos.EntryPrice,
-		ExitDate:         day,
-		ExitReason:       reason,
-		LotsSold:         lotsSold,
-		LotsTotal:        lotsTotal,
-		PNLPctNet:        pct,
-		PNLRpNet:         pnl,
-		HoldDays:         holdDays,
-		HoldTradingDays:  holdTrading,
+		EntryDate:       pos.EntryDate,
+		Symbol:          pos.Symbol,
+		SignalCode:      pos.SigCode,
+		EntryPrice:      pos.EntryPrice,
+		ExitDate:        day,
+		ExitReason:      reason,
+		LotsSold:        lotsSold,
+		LotsTotal:       lotsTotal,
+		PNLPctNet:       pct,
+		PNLRpNet:        pnl,
+		HoldDays:        holdDays,
+		HoldTradingDays: holdTrading,
 	}
 }
 

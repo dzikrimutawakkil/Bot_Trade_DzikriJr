@@ -11,18 +11,48 @@ import (
 	"learn-go/internal/config"
 	"learn-go/internal/market"
 	"learn-go/internal/models"
+	"learn-go/internal/signals"
 	"learn-go/internal/utils"
 )
 
-// RegisterCronJobs mendaftarkan jadwal laporan otomatis ke Telegram
-func RegisterCronJobs(bot *tgbotapi.BotAPI) {
-	// Gunakan lokasi waktu Jakarta (WIB)
-	jakartaTime, _ := time.LoadLocation("Asia/Jakarta")
-	c := cron.New(cron.WithLocation(jakartaTime))
+// CheckTrendBreak scans all live positions and sends alerts when MA5 < MA20.
+func CheckTrendBreak(bot *tgbotapi.BotAPI) {
+	config.DataMutex.RLock()
+	symbols := make([]string, 0, len(config.MyStocks))
+	for sym := range config.MyStocks {
+		symbols = append(symbols, sym)
+	}
+	config.DataMutex.RUnlock()
 
-	// HANYA 1 JADWAL: Laporan Penutupan Pasar (Jam 16:20 WIB, Senin-Jumat)
-	// Catatan: err menggunakan := karena ini sekarang inisialisasi pertama
+	if len(symbols) == 0 {
+		return
+	}
+
+	for _, sym := range symbols {
+		bars, err := market.GetBars(sym, "1mo")
+		if err != nil || len(bars) < 50 {
+			continue
+		}
+		clean := market.CleanBars(bars)
+		if len(clean) < 50 {
+			continue
+		}
+
+		if signals.TrendBroken(clean, time.Now()) {
+			msg := fmt.Sprintf("📉 **TREND BREAK — %s!**\n\nMA5 < MA20 terdeteksi. Pertimbangkan jual manual: `/sell %s`.", sym, sym)
+			utils.SendMarkdownMessage(bot, msg)
+		}
+	}
+}
+
+// RegisterCronJobs adds the daily summary cron to the shared cron instance.
+func RegisterCronJobs(bot *tgbotapi.BotAPI, c *cron.Cron) {
 	_, err := c.AddFunc("20 16 * * 1-5", func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Printf("⚠️ runDailySummary panic recovered: %v\n", r)
+			}
+		}()
 		runDailySummary(bot, "Laporan Penutupan Pasar")
 	})
 
@@ -31,7 +61,6 @@ func RegisterCronJobs(bot *tgbotapi.BotAPI) {
 		return
 	}
 
-	c.Start()
 	fmt.Println("⏰ Cron Jobs untuk Summary (16:20) telah aktif!")
 }
 

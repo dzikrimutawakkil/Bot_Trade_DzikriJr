@@ -4,8 +4,8 @@ import "learn-go/internal/models"
 
 type pullback20Strategy struct{}
 
-func (s *pullback20Strategy) Name() string   { return "pullback20" }
-func (s *pullback20Strategy) MinBars() int   { return 61 }
+func (s *pullback20Strategy) Name() string { return "pullback20" }
+func (s *pullback20Strategy) MinBars() int { return 61 }
 func (s *pullback20Strategy) Evaluate(bars []models.Bar, ihsgSafe bool) Signal {
 	n := len(bars)
 	if n < 61 {
@@ -33,9 +33,9 @@ func (s *pullback20Strategy) Evaluate(bars []models.Bar, ihsgSafe bool) Signal {
 
 	if cond1 && cond2 && cond3 && cond4 && cond5 && ihsgSafe {
 		return Signal{
-			Score:   10,
-			Code:    "PULLBACK_MA20",
-			Low:     today.Low,
+			Score: 10,
+			Code:  "PULLBACK_MA20",
+			Low:   today.Low,
 		}
 	}
 	return Signal{Score: 0, Code: "NONE", Low: today.Low}

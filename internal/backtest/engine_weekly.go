@@ -277,14 +277,14 @@ func RunWeekly(cfg Config, allBars map[string][]models.Bar) (Result, error) {
 	_ = monthInjections
 
 	return Result{
-		Trades:             trades,
-		EquityCurve:        equityCurve,
-		Metrics:            metrics,
-		SignalCounts:       signalCounts,
-		IHSGFiltered:       0,
-		FinalCapital:       cash,
-		TotalReturnPct:     investedProfit,
-		SkippedSignals:     nil,
+		Trades:         trades,
+		EquityCurve:    equityCurve,
+		Metrics:        metrics,
+		SignalCounts:   signalCounts,
+		IHSGFiltered:   0,
+		FinalCapital:   cash,
+		TotalReturnPct: investedProfit,
+		SkippedSignals: nil,
 	}, nil
 }
 
